@@ -1,8 +1,8 @@
 import { google } from 'googleapis';
 import { getServiceRoleClient } from '@/lib/supabase';
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '600462356560-24vr5atvegb83oun3n45qp03pons0ftg.apps.googleusercontent.com';
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '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';
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 
 export async function addGoogleCalendarEvent(bookingDetails: {
     startTime: string;
@@ -13,6 +13,11 @@ export async function addGoogleCalendarEvent(bookingDetails: {
     lessonTitle: string;
 }) {
     try {
+        if (!CLIENT_ID || !CLIENT_SECRET) {
+            console.log("Google Calendar credentials not configured. Skipping sync.");
+            return;
+        }
+
         const adminClient = getServiceRoleClient();
         
         // Fetch token from settings
@@ -29,6 +34,16 @@ export async function addGoogleCalendarEvent(bookingDetails: {
 
         const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET);
         oauth2Client.setCredentials({ refresh_token: setting.value });
+
+        // Listen for token refresh events and persist updated tokens
+        oauth2Client.on('tokens', async (tokens) => {
+            if (tokens.refresh_token) {
+                await adminClient
+                    .from('settings')
+                    .upsert([{ key: 'google_calendar_refresh_token', value: tokens.refresh_token, updated_at: new Date().toISOString() }], { onConflict: 'key' });
+                console.log('Google Calendar refresh token updated');
+            }
+        });
 
         const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 

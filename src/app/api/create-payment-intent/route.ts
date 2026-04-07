@@ -2,10 +2,14 @@ import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { getServiceRoleClient } from '@/lib/supabase'
 
-const stripeBase = process.env.STRIPE_SECRET_KEY as string
-const stripe = stripeBase ? new Stripe(stripeBase, {
-    apiVersion: '2026-02-25.clover',
-}) : null
+function getStripe() {
+    const key = process.env.STRIPE_SECRET_KEY
+    if (!key) {
+        console.warn('STRIPE_SECRET_KEY is not set - payments will be bypassed')
+        return null
+    }
+    return new Stripe(key, { apiVersion: '2026-02-25.clover' })
+}
 
 export async function POST(req: Request) {
     try {
@@ -90,6 +94,7 @@ export async function POST(req: Request) {
 
         const bookingIds = bookings.map((b: any) => b.id).join(',')
 
+        const stripe = getStripe()
         if (!stripe) {
             console.warn('Stripe keys missing - Bypassing payment for local testing')
 

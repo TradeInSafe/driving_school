@@ -1,16 +1,12 @@
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createClient } from '@supabase/supabase-js'
+import { getServiceRoleClient } from '@/lib/supabase'
 
-const stripeBase = process.env.STRIPE_SECRET_KEY as string
-const stripe = stripeBase ? new Stripe(stripeBase, {
-    apiVersion: '2026-02-25.clover',
-}) : null
-
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+function getStripe() {
+    const key = process.env.STRIPE_SECRET_KEY
+    if (!key) return null
+    return new Stripe(key, { apiVersion: '2026-02-25.clover' })
+}
 
 export async function POST(req: Request) {
     try {
@@ -20,8 +16,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Package ID and Student ID are required' }, { status: 400 })
         }
 
+        const db = getServiceRoleClient()
+
         // Fetch package details (from lessons table)
-        const { data: pkg, error: pkgError } = await supabase
+        const { data: pkg, error: pkgError } = await db
             .from('lessons')
             .select('*')
             .eq('id', packageId)
@@ -31,28 +29,37 @@ export async function POST(req: Request) {
             throw new Error('Package not found')
         }
 
-        // Determine credits based on title or description if not in DB yet
-        let credits = 1
-        if (pkg.title.includes('5')) credits = 5
-        else if (pkg.title.includes('10')) credits = 10
+        // Determine credits: use lesson_count for packages, else infer from title
+        let credits = pkg.lesson_count || 1
+        if (credits <= 1) {
+            if (pkg.title.includes('10')) credits = 10
+            else if (pkg.title.includes('5')) credits = 5
+        }
+
+        const stripe = getStripe()
 
         if (!stripe) {
             console.warn('Stripe key missing - bypassing package payment process for testing')
 
-            // Fetch current profile to get exact existing credits
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('lesson_credits')
+            // Fetch current user profile to get existing credits
+            const { data: profile } = await db
+                .from('users')
+                .select('credits_remaining')
                 .eq('id', studentId)
                 .single()
 
-            const existingCredits = profile?.lesson_credits || 0
+            const existingCredits = profile?.credits_remaining || 0
 
-            // Manually add credits and bypass
-            await supabase
-                .from('profiles')
-                .update({ lesson_credits: existingCredits + credits })
+            // Add credits using service role client (bypasses RLS)
+            const { error: updateError } = await db
+                .from('users')
+                .update({ credits_remaining: existingCredits + credits })
                 .eq('id', studentId)
+
+            if (updateError) {
+                console.error('Credit update error:', updateError.message)
+                throw new Error('Failed to update credits: ' + updateError.message)
+            }
 
             return NextResponse.json({ bypassStripe: true })
         }

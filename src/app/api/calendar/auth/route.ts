@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '600462356560-24vr5atvegb83oun3n45qp03pons0ftg.apps.googleusercontent.com';
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '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';
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 
 export async function GET(req: Request) {
+    if (!CLIENT_ID || !CLIENT_SECRET) {
+        return NextResponse.json({ error: 'Google Calendar credentials not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables.' }, { status: 500 });
+    }
+
     // Generate auth URL
-    // We assume the redirect URI is http://localhost:3000/api/calendar/callback or the host of the request
     const url = new URL(req.url);
     const REDIRECT_URI = `${url.protocol}//${url.host}/api/calendar/callback`;
 
