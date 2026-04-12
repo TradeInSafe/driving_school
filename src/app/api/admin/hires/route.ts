@@ -6,13 +6,8 @@ export async function GET(request: NextRequest) {
     if (!verifyAdminSession(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
     const db = getServiceRoleClient()
-    const { data, error } = await db
-        .from('instructors')
-        .select('*')
-        .order('full_name')
-
+    const { data, error } = await db.from('vehicle_hires').select('*').order('created_at', { ascending: false })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
 }
@@ -21,31 +16,16 @@ export async function POST(request: NextRequest) {
     if (!verifyAdminSession(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const { full_name, email, phone, bio, experience_years, car_model, languages, rating } = await request.json()
-
-    if (!full_name) {
-        return NextResponse.json({ error: 'full_name is required' }, { status: 400 })
+    const { title, description, vehicle_type, duration_minutes, price } = await request.json()
+    if (!title || !vehicle_type || !price) {
+        return NextResponse.json({ error: 'title, vehicle_type and price are required' }, { status: 400 })
     }
-
     const db = getServiceRoleClient()
     const { data, error } = await db
-        .from('instructors')
-        .insert({ full_name, email, phone, bio, experience_years, car_model, languages, rating })
+        .from('vehicle_hires')
+        .insert({ title, description, vehicle_type, duration_minutes: duration_minutes || 60, price })
         .select()
         .single()
-
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-    // Auto-seed default availability: all 7 days, 07:00–19:00
-    const defaultSlots = [0, 1, 2, 3, 4, 5, 6].map(day => ({
-        instructor_id: data.id,
-        day_of_week: day,
-        start_time: '07:00',
-        end_time: '19:00',
-        is_active: true,
-    }))
-    await db.from('availability').insert(defaultSlots)
-
     return NextResponse.json(data, { status: 201 })
 }

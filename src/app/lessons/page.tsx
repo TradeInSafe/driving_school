@@ -20,9 +20,20 @@ interface LessonItem {
     savings?: number
 }
 
+interface HireItem {
+    id: string
+    title: string
+    description: string
+    vehicle_type: string
+    duration_minutes: number
+    price: number
+    is_active: boolean
+}
+
 export default function LessonsPage() {
     const [individualLessons, setIndividualLessons] = useState<LessonItem[]>([])
     const [packages, setPackages] = useState<LessonItem[]>([])
+    const [hires, setHires] = useState<HireItem[]>([])
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
@@ -32,16 +43,15 @@ export default function LessonsPage() {
     const fetchLessons = async () => {
         setLoading(true)
         try {
-            const { data, error } = await supabase
-                .from('lessons')
-                .select('*')
-                .eq('is_active', true)
-                .order('price', { ascending: true })
+            const [{ data: lessonsData, error }, { data: hiresData }] = await Promise.all([
+                supabase.from('lessons').select('*').eq('is_active', true).order('price', { ascending: true }),
+                supabase.from('vehicle_hires').select('*').eq('is_active', true).order('price', { ascending: true }),
+            ])
 
             if (error) throw error
 
-            if (data) {
-                const processed = data.map(lesson => ({
+            if (lessonsData) {
+                const processed = lessonsData.map(lesson => ({
                     ...lesson,
                     features: lesson.features || [lesson.description || "High-quality instruction"],
                     isPopular: lesson.is_popular || false,
@@ -51,6 +61,8 @@ export default function LessonsPage() {
                 setIndividualLessons(processed.filter(l => !l.is_package))
                 setPackages(processed.filter(l => l.is_package))
             }
+
+            if (hiresData) setHires(hiresData)
         } catch (err) {
             console.error('Error fetching lessons:', err)
         } finally {
@@ -188,6 +200,52 @@ export default function LessonsPage() {
                     </div>
                 </div>
             </section>
+
+            {/* Vehicle Hire for Test */}
+            {hires.length > 0 && (
+                <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="h-px bg-border flex-grow" />
+                        <h2 className="text-2xl font-bold font-outfit px-4">Hire a Vehicle for Your Test</h2>
+                        <div className="h-px bg-border flex-grow" />
+                    </div>
+                    <p className="text-center text-muted-foreground text-sm mb-12 max-w-xl mx-auto">
+                        Already confident behind the wheel? Hire one of our dual-controlled vehicles for your practical driving test. An instructor accompaniment is optional.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {hires.map((hire, i) => (
+                            <motion.div
+                                key={hire.id}
+                                initial={{ opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                transition={{ delay: i * 0.1 }}
+                                className="p-8 rounded-3xl border border-border bg-card hover:border-accent/40 hover:shadow-lg transition-all space-y-4"
+                            >
+                                <div className="bg-accent/10 w-14 h-14 rounded-2xl flex items-center justify-center text-3xl">
+                                    {hire.vehicle_type === 'truck' ? '🚛' : '🚗'}
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold">{hire.title}</h3>
+                                    <p className="text-sm text-muted-foreground mt-1">{hire.description}</p>
+                                </div>
+                                <div className="flex items-baseline gap-2">
+                                    <span className="text-3xl font-bold">${hire.price}</span>
+                                    <span className="text-muted-foreground text-sm">/ {hire.duration_minutes} mins</span>
+                                </div>
+                                <ul className="space-y-2 text-sm text-muted-foreground">
+                                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-accent shrink-0" /> Dual-controlled vehicle</li>
+                                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-accent shrink-0" /> Instructor accompaniment optional</li>
+                                    <li className="flex items-center gap-2"><Check className="w-4 h-4 text-accent shrink-0" /> Fully insured</li>
+                                </ul>
+                                <Link href={`/book?mode=hire&hireId=${hire.id}`}>
+                                    <Button variant="outline" className="w-full mt-2">Hire for Test</Button>
+                                </Link>
+                            </motion.div>
+                        ))}
+                    </div>
+                </section>
+            )}
 
             {/* Features Grid */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">

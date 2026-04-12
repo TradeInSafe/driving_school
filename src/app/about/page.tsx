@@ -1,35 +1,31 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Shield, Award, Users, Target, CheckCircle2 } from 'lucide-react'
+import { Shield, Award, Users, Target, CheckCircle2, User } from 'lucide-react'
 import Image from 'next/image'
+import { supabase } from '@/lib/supabase'
 
-const instructors = [
-    {
-        name: "John Anderson",
-        role: "Senior Instructor",
-        exp: "15+ Years",
-        bio: "Specializing in intensive courses and nervous beginners. John has a 95% first-time pass rate.",
-        image: "https://i.pravatar.cc/300?img=11"
-    },
-    {
-        name: "Sarah Miller",
-        role: "Driving Coach",
-        exp: "8 Years",
-        bio: "Sarah focuses on modern safety techniques and advanced road awareness for young drivers.",
-        image: "https://i.pravatar.cc/300?img=47"
-    },
-    {
-        name: "David Chen",
-        role: "Skills Specialist",
-        exp: "12 Years",
-        bio: "Expert in manual transmission and mock test preparation. Known for his patient and calm approach.",
-        image: "https://i.pravatar.cc/300?img=12"
-    }
-]
+interface Instructor {
+    id: string
+    full_name: string
+    bio: string | null
+    experience_years: number
+    photo_url: string | null
+    rating: number
+}
 
 export default function AboutPage() {
+    const [instructors, setInstructors] = useState<Instructor[]>([])
+
+    useEffect(() => {
+        supabase
+            .from('instructors')
+            .select('id, full_name, bio, experience_years, photo_url, rating')
+            .eq('is_active', true)
+            .order('created_at', { ascending: true })
+            .then(({ data }) => { if (data) setInstructors(data) })
+    }, [])
     return (
         <div className="pb-20">
             {/* Hero Section */}
@@ -59,7 +55,7 @@ export default function AboutPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
                     <div className="relative h-96 md:h-full min-h-[400px] rounded-[3rem] overflow-hidden shadow-2xl">
                         <Image
-                            src="/heavy_truck.png"
+                            src="/brisbane_driving_truck.jpeg"
                             alt="Brisbane's Leading Heavy Vehicle Driving School"
                             fill
                             className="object-cover"
@@ -123,36 +119,45 @@ export default function AboutPage() {
                         <p className="text-4xl font-bold font-outfit">Your Professional Instructors</p>
                     </div>
 
+                    {instructors.length === 0 ? (
+                        <p className="text-center text-muted-foreground">Instructor profiles coming soon.</p>
+                    ) : (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
                         {instructors.map((instructor, i) => (
                             <motion.div
-                                key={i}
+                                key={instructor.id}
                                 initial={{ opacity: 0, y: 30 }}
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: true }}
                                 transition={{ delay: i * 0.1 }}
                                 className="group"
                             >
-                                <div className="aspect-square rounded-[2rem] overflow-hidden mb-8 shadow-lg ring-1 ring-border">
-                                    <img
-                                        src={instructor.image}
-                                        alt={instructor.name}
-                                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                    />
+                                <div className="aspect-square rounded-[2rem] overflow-hidden mb-8 shadow-lg ring-1 ring-border bg-muted flex items-center justify-center">
+                                    {instructor.photo_url ? (
+                                        <img
+                                            src={instructor.photo_url}
+                                            alt={instructor.full_name}
+                                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                        />
+                                    ) : (
+                                        <User className="w-16 h-16 text-muted-foreground" />
+                                    )}
                                 </div>
                                 <div className="space-y-2">
                                     <div className="flex justify-between items-start">
-                                        <h3 className="text-2xl font-bold font-outfit">{instructor.name}</h3>
-                                        <span className="bg-secondary text-primary font-bold text-[10px] px-2 py-1 rounded lowercase tracking-tight">{instructor.exp} exp</span>
+                                        <h3 className="text-2xl font-bold font-outfit">{instructor.full_name}</h3>
+                                        {instructor.experience_years > 0 && (
+                                            <span className="bg-secondary text-primary font-bold text-[10px] px-2 py-1 rounded lowercase tracking-tight">{instructor.experience_years}+ yrs</span>
+                                        )}
                                     </div>
-                                    <p className="text-accent font-semibold">{instructor.role}</p>
-                                    <p className="text-muted-foreground leading-relaxed pt-2">
-                                        {instructor.bio}
-                                    </p>
+                                    {instructor.bio && (
+                                        <p className="text-muted-foreground leading-relaxed pt-2">{instructor.bio}</p>
+                                    )}
                                 </div>
                             </motion.div>
                         ))}
                     </div>
+                    )}
                 </div>
             </section>
 

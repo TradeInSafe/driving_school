@@ -53,15 +53,15 @@ export async function GET(request: NextRequest) {
         const email = googleUser.email.toLowerCase()
 
         // Find existing user by google_id or email
-        type UserRow = { id: string; email: string; full_name: string | null; google_id: string | null }
+        type UserRow = { id: string; email: string; full_name: string | null; google_id: string | null; phone: string | null; address: string | null; gender: string | null }
         let { data: user } = await db
             .from('users')
-            .select('id, email, full_name, google_id')
+            .select('id, email, full_name, google_id, phone, address, gender')
             .or(`google_id.eq.${googleUser.sub},email.eq.${email}`)
             .maybeSingle() as { data: UserRow | null }
 
         if (!user) {
-            // New user — create account
+            // New user — create account (profile incomplete, will be filled in)
             const { data: newUser, error } = await db
                 .from('users')
                 .insert({
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
                     google_id: googleUser.sub,
                     full_name: googleUser.name || email,
                 })
-                .select('id, email, full_name, google_id')
+                .select('id, email, full_name, google_id, phone, address, gender')
                 .single() as { data: UserRow | null; error: any }
 
             if (error || !newUser) throw new Error('Failed to create user: ' + error?.message)
@@ -80,7 +80,14 @@ export async function GET(request: NextRequest) {
         }
 
         const token = await createSessionToken({ id: user.id, email: user.email, full_name: user.full_name })
-        const response = NextResponse.redirect(`${appUrl}${redirect}`)
+
+        // If profile is incomplete, redirect to complete-profile page
+        const profileIncomplete = !user.phone || !user.address || !user.gender
+        const finalRedirect = profileIncomplete
+            ? `${appUrl}/complete-profile?redirect=${encodeURIComponent(redirect)}`
+            : `${appUrl}${redirect}`
+
+        const response = NextResponse.redirect(finalRedirect)
         setSessionCookie(response, token)
         return response
     } catch (err: any) {

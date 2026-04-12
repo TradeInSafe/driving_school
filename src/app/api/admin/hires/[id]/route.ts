@@ -6,14 +6,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!verifyAdminSession(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
     const { id } = await params
     const body = await request.json()
     const db = getServiceRoleClient()
-
-    const { action, ...updatePayload } = body
-    const { data, error } = await db.from('users').update(updatePayload).eq('id', id).select().single()
-
+    const { data, error } = await db.from('vehicle_hires').update(body).eq('id', id).select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
 }
@@ -22,18 +18,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     if (!verifyAdminSession(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
     const { id } = await params
     const db = getServiceRoleClient()
-
-    // Delete related records first (FK constraints)
-    const { error: bookingsError } = await db.from('bookings').delete().eq('student_id', id)
-    if (bookingsError) return NextResponse.json({ error: bookingsError.message }, { status: 500 })
-
-    const { error: purchasesError } = await db.from('package_purchases').delete().eq('student_id', id)
-    if (purchasesError) return NextResponse.json({ error: purchasesError.message }, { status: 500 })
-
-    const { error } = await db.from('users').delete().eq('id', id)
+    const { error } = await db.from('vehicle_hires').delete().eq('id', id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return new NextResponse(null, { status: 204 })
 }

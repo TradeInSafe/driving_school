@@ -9,8 +9,9 @@ export interface AuthUser {
     full_name: string | null
     phone: string | null
     address: string | null
-    credits_remaining: number
-    package_expiry: string | null
+    gender: string | null
+    license_number: string | null
+    license_expiry: string | null
 }
 
 interface AuthContextType {

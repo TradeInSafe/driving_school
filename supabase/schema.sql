@@ -9,11 +9,19 @@ create table if not exists public.users (
   full_name text,
   phone text,
   address text,
+  gender text,
+  license_number text,
+  license_expiry date,
   credits_remaining integer default 0,
   package_expiry timestamp with time zone,
   created_at timestamp with time zone default timezone('utc'::text, now()),
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
+
+-- Add new student profile columns if not present (for existing DBs)
+alter table public.users add column if not exists gender text;
+alter table public.users add column if not exists license_number text;
+alter table public.users add column if not exists license_expiry date;
 
 alter table public.users enable row level security;
 -- All access goes through service role API routes; no direct client access
@@ -313,20 +321,28 @@ drop policy if exists "Admins can delete assets." on storage.objects;
 
 -- [2026-04-03] Copy existing Supabase auth users into public.users (preserves IDs so FKs stay valid)
 -- Pulls email from auth.users and profile data from public.profiles
-insert into public.users (id, email, full_name, phone, address, credits_remaining, package_expiry, created_at)
-select
-  au.id,
-  au.email,
-  p.full_name,
-  p.phone,
-  p.address,
-  coalesce(p.credits_remaining, 0),
-  p.package_expiry,
-  au.created_at
-from auth.users au
-left join public.profiles p on p.id = au.id
-where au.id not in (select id from public.users)
-on conflict (id) do nothing;
+do $$
+declare
+  r record;
+begin
+  for r in
+    select au.id, au.email, p.full_name, p.phone, p.address,
+           coalesce(p.credits_remaining, 0) as credits_remaining,
+           p.package_expiry, au.created_at
+    from auth.users au
+    left join public.profiles p on p.id = au.id
+    where au.id not in (select id from public.users)
+      and au.email not in (select email from public.users)
+  loop
+    begin
+      insert into public.users (id, email, full_name, phone, address, credits_remaining, package_expiry, created_at)
+      values (r.id, r.email, r.full_name, r.phone, r.address, r.credits_remaining, r.package_expiry, r.created_at);
+    exception when unique_violation then
+      -- skip rows that conflict on any unique column
+      null;
+    end;
+  end loop;
+end $$;
 
 -- [2026-04-03] Migrate bookings.student_id FK from profiles to users
 do $$
@@ -395,3 +411,31 @@ do $$ begin
       ) where (status = 'scheduled');
   end if;
 end $$;
+
+-- [2026-04-06] Add photo_url to instructors
+alter table public.instructors add column if not exists photo_url text;
+
+-- [2026-04-08] Fix availability slots seeded with 06:00 — standardise to 07:00
+update public.availability set start_time = '07:00' where start_time < '07:00';
+
+-- [2026-04-10] Vehicle Hire for Test
+create table if not exists public.vehicle_hires (
+  id uuid default gen_random_uuid() primary key,
+  title text not null,
+  description text,
+  vehicle_type text check (vehicle_type in ('car', 'truck')) not null default 'car',
+  duration_minutes integer not null default 60,
+  price decimal(10, 2) not null,
+  is_active boolean default true,
+  created_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+alter table public.vehicle_hires enable row level security;
+drop policy if exists "Vehicle hires are viewable by everyone." on public.vehicle_hires;
+create policy "Vehicle hires are viewable by everyone." on public.vehicle_hires for select using (true);
+
+-- Allow hire_id on bookings (lesson_id and instructor_id become optional for hire bookings)
+alter table public.bookings add column if not exists hire_id uuid references public.vehicle_hires(id);
+alter table public.bookings add column if not exists needs_instructor boolean default false;
+alter table public.bookings alter column lesson_id drop not null;
+alter table public.bookings alter column instructor_id drop not null;

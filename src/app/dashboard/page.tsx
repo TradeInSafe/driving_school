@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Calendar, Clock, BookOpen, Package, ChevronRight, AlertCircle, CheckCircle2, XCircle, User, MapPin, Star, Zap, Phone } from 'lucide-react'
+import { Calendar, Clock, BookOpen, Package, ChevronRight, AlertCircle, CheckCircle2, XCircle, User, MapPin, Phone } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/hooks/useAuth'
 import Link from 'next/link'
@@ -69,8 +69,6 @@ export default function StudentDashboard() {
 
     // Suggest recommendation based on last completed lesson
     const lastCompleted = bookings.filter(b => b.status === 'completed').sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())[0]
-    const hasCredits = (profile?.credits_remaining || 0) > 0
-
     return (
         <div className="max-w-7xl mx-auto px-4 py-12 space-y-12">
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -79,13 +77,6 @@ export default function StudentDashboard() {
                     <p className="text-muted-foreground">Welcome back, {profile?.full_name || 'Student'}</p>
                 </div>
                 <div className="flex gap-4">
-                    {hasCredits && (
-                        <Link href={`/book${lastCompleted ? `?instructorId=${lastCompleted.instructor_id}&lessonId=${lastCompleted.lesson_id}` : ''}`}>
-                            <Button variant="accent" size="lg" className="rounded-2xl gap-2 shadow-xl shadow-accent/20">
-                                <CheckCircle2 className="w-5 h-5" /> Book with Credit
-                            </Button>
-                        </Link>
-                    )}
                     <Link href="/book">
                         <Button size="lg" className="rounded-2xl gap-2 shadow-xl hover:shadow-accent/20">
                             <Calendar className="w-5 h-5" /> Book New Lesson
@@ -93,33 +84,6 @@ export default function StudentDashboard() {
                     </Link>
                 </div>
             </header>
-
-            {/* Recommendation Banner - Only if has credits and previous lessons */}
-            {hasCredits && lastCompleted && (
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-accent text-white p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden"
-                >
-                    <div className="absolute top-0 right-0 p-8 opacity-10">
-                        <Star className="w-48 h-48 fill-white" />
-                    </div>
-                    <div className="flex flex-col md:flex-row justify-between items-center gap-8 relative z-10">
-                        <div className="space-y-4">
-                            <div className="inline-flex items-center gap-2 bg-white/20 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest">
-                                <Zap className="w-4 h-4" /> Recommended for you
-                            </div>
-                            <h2 className="text-3xl font-bold font-outfit">Continue your progress with {lastCompleted.instructor?.full_name}</h2>
-                            <p className="text-white/80 max-w-xl">You have {profile?.credits_remaining} credits left. Students who book lessons weekly are 3x more likely to pass their test on the first try!</p>
-                        </div>
-                        <Link href={`/book?instructorId=${lastCompleted.instructor_id}&lessonId=${lastCompleted.lesson_id}`}>
-                            <Button variant="secondary" size="lg" className="h-16 px-10 rounded-2xl text-lg font-bold">
-                                Book Next Lesson
-                            </Button>
-                        </Link>
-                    </div>
-                </motion.div>
-            )}
 
             {/* Stats Overview */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -139,18 +103,6 @@ export default function StudentDashboard() {
                     <div>
                         <p className="text-4xl font-bold">{pastBookings.filter(b => b.status === 'completed').length}</p>
                         <p className="text-sm font-medium text-muted-foreground uppercase tracking-widest">Lessons Completed</p>
-                    </div>
-                </div>
-                <div className="bg-card border border-border p-8 rounded-3xl shadow-sm space-y-4">
-                    <div className="w-12 h-12 bg-primary/5 rounded-2xl flex items-center justify-center text-primary">
-                        <Package className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <p className="text-4xl font-bold">{profile?.credits_remaining || 0}</p>
-                        <p className="text-sm font-medium text-muted-foreground uppercase tracking-widest">Lesson Credits</p>
-                        {profile?.package_expiry && (
-                            <p className="text-[10px] text-muted-foreground mt-1 font-bold">Expires: {new Date(profile.package_expiry).toLocaleDateString()}</p>
-                        )}
                     </div>
                 </div>
             </div>

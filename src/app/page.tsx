@@ -15,10 +15,10 @@ export default function Home() {
         <div className="absolute inset-0 z-0">
           <div className="absolute inset-0 bg-gradient-to-r from-primary/95 via-primary/80 to-transparent z-10" />
           <Image
-            src="/heavy_truck.png"
-            alt="Heavy rigid truck driving lesson"
+            src="/brisbane_driving_car.jpeg"
+            alt="Brisbane Bayside Driving School car"
             fill
-            className="object-cover"
+            className="object-contain"
             priority
           />
         </div>
@@ -148,14 +148,14 @@ export default function Home() {
               <div className="grid grid-cols-1 gap-6">
                 {[
                   {
-                    name: "Sophie Thompson",
-                    role: "Passed in 1st Attempt",
-                    comment: "The best experience! My instructor was so patient and explained everything clearly. I felt so prepared for my test."
+                    name: "Danielle M.",
+                    role: "Passed First Attempt",
+                    comment: "I was really nervous about learning to drive but my instructor made me feel completely at ease from the very first lesson. He was patient, encouraging and explained everything so clearly. I passed my test first go and couldn't be happier. Highly recommend Brisbane Bayside Driving School!"
                   },
                   {
-                    name: "James Wilson",
+                    name: "Liam T.",
                     role: "Student",
-                    comment: "Booking lessons is so easy with the online system. Highly recommend Brisbane Bayside Driving School for anyone starting out."
+                    comment: "Fantastic driving school! The online booking system made it so easy to schedule lessons around my work. My instructor was professional and always on time. I felt confident behind the wheel after just a few sessions. 5 stars without a doubt!"
                   }
                 ].map((testimonial, i) => (
                   <motion.div

@@ -2,97 +2,56 @@
 
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { User, Mail, Shield, Save, LogOut, Camera } from 'lucide-react'
+import { User, Mail, Shield, Save, LogOut, Phone, MapPin, CreditCard, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/hooks/useAuth'
-import { supabase } from '@/lib/supabase'
 
 export default function ProfilePage() {
-    const { user, profile, signOut, loading: authLoading } = useAuth()
+    const { user, profile, signOut, loading: authLoading, refreshUser } = useAuth()
     const [fullName, setFullName] = useState('')
-    const [bio, setBio] = useState('')
-    const [experience, setExperience] = useState<number>(0)
-    const [carModel, setCarModel] = useState('')
-    const [languages, setLanguages] = useState<string>('')
-    const [avatarUrl, setAvatarUrl] = useState('')
+    const [phone, setPhone] = useState('')
+    const [address, setAddress] = useState('')
+    const [gender, setGender] = useState('')
+    const [licenseNumber, setLicenseNumber] = useState('')
+    const [licenseExpiry, setLicenseExpiry] = useState('')
     const [loading, setLoading] = useState(false)
-    const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
     useEffect(() => {
         if (profile) {
             setFullName(profile.full_name || '')
-            setBio((profile as any).bio || '')
-            setExperience((profile as any).experience_years || 0)
-            setCarModel((profile as any).car_model || '')
-            setLanguages((profile as any).languages?.join(', ') || 'English')
-            setAvatarUrl((profile as any).avatar_url || '')
+            setPhone(profile.phone || '')
+            setAddress(profile.address || '')
+            setGender(profile.gender || '')
+            setLicenseNumber(profile.license_number || '')
+            setLicenseExpiry(profile.license_expiry ? profile.license_expiry.slice(0, 10) : '')
         }
     }, [profile])
 
     const handleUpdateProfile = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!user) return
-
         setLoading(true)
         setMessage(null)
-
         try {
-            const { error } = await supabase
-                .from('profiles')
-                .upsert({
-                    id: user.id,
+            const res = await fetch('/api/user/profile', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     full_name: fullName,
-                    bio: bio,
-                    experience_years: experience,
-                    car_model: carModel,
-                    languages: languages.split(',').map(s => s.trim()).filter(Boolean),
-                    avatar_url: avatarUrl,
-                    updated_at: new Date().toISOString(),
-                })
-
-            if (error) throw error
+                    phone: phone || undefined,
+                    address: address || undefined,
+                    license_number: licenseNumber || undefined,
+                    license_expiry: licenseExpiry || undefined,
+                }),
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Failed to update profile')
+            await refreshUser()
             setMessage({ type: 'success', text: 'Profile updated successfully!' })
         } catch (err: any) {
             setMessage({ type: 'error', text: err.message || 'Failed to update profile' })
         } finally {
             setLoading(false)
-        }
-    }
-
-    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
-        if (!file || !user) return
-
-        setIsUploadingAvatar(true)
-        setMessage(null)
-
-        try {
-            const fileExt = file.name.split('.').pop()
-            const fileName = `avatar_${user.id}_${Date.now()}.${fileExt}`
-
-            const { error: uploadError } = await supabase.storage
-                .from('assets')
-                .upload(fileName, file, { cacheControl: '3600', upsert: true })
-
-            if (uploadError) throw uploadError
-
-            const { data: { publicUrl } } = supabase.storage.from('assets').getPublicUrl(fileName)
-
-            const { error: profileError } = await supabase
-                .from('profiles')
-                .update({ avatar_url: publicUrl })
-                .eq('id', user.id)
-
-            if (profileError) throw profileError
-
-            setAvatarUrl(publicUrl)
-            setMessage({ type: 'success', text: 'Avatar updated successfully!' })
-        } catch (err: any) {
-            console.error('Avatar upload error:', err.message)
-            setMessage({ type: 'error', text: 'Failed to upload avatar: ' + err.message })
-        } finally {
-            setIsUploadingAvatar(false)
         }
     }
 
@@ -125,22 +84,12 @@ export default function ProfilePage() {
                 {/* Sidebar */}
                 <aside className="w-full md:w-64 space-y-4">
                     <div className="bg-card border border-border rounded-3xl p-6 text-center space-y-4 shadow-sm">
-                        <div className="relative inline-block">
-                            <div className="w-24 h-24 bg-accent/10 rounded-full flex items-center justify-center overflow-hidden border-2 border-accent/20">
-                                {(profile as any)?.avatar_url || avatarUrl ? (
-                                    <img src={avatarUrl || (profile as any)?.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-                                ) : (
-                                    <User className="w-10 h-10 text-accent" />
-                                )}
-                            </div>
-                            <label className={`absolute bottom-0 right-0 bg-white p-2 rounded-full shadow-lg border border-border transition-colors ${isUploadingAvatar ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted cursor-pointer'}`}>
-                                <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" disabled={isUploadingAvatar} />
-                                <Camera className="w-4 h-4 text-primary" />
-                            </label>
+                        <div className="w-20 h-20 bg-accent/10 rounded-full flex items-center justify-center mx-auto border-2 border-accent/20">
+                            <User className="w-10 h-10 text-accent" />
                         </div>
                         <div>
                             <h3 className="font-bold text-lg">{profile?.full_name || 'My Profile'}</h3>
-                            <p className="text-xs text-accent font-bold uppercase tracking-widest">{( profile as any)?.role}</p>
+                            <p className="text-xs text-muted-foreground">{user.email}</p>
                         </div>
                         <div className="pt-4 border-t border-border">
                             <Button variant="ghost" className="w-full justify-start gap-3 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={signOut}>
@@ -159,7 +108,7 @@ export default function ProfilePage() {
                     >
                         <div className="space-y-2">
                             <h1 className="text-3xl font-bold font-outfit">Profile Settings</h1>
-                            <p className="text-muted-foreground">Manage your personal information and account preferences</p>
+                            <p className="text-muted-foreground">Manage your personal information and licence details</p>
                         </div>
 
                         {message && (
@@ -168,8 +117,11 @@ export default function ProfilePage() {
                             </div>
                         )}
 
-                        <form onSubmit={handleUpdateProfile} className="space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <form onSubmit={handleUpdateProfile} className="space-y-8">
+                            {/* Personal Details */}
+                            <div className="space-y-5">
+                                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">Personal Details</p>
+
                                 <div className="space-y-2">
                                     <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Email Address</label>
                                     <div className="relative">
@@ -184,96 +136,97 @@ export default function ProfilePage() {
                                     <p className="text-[10px] text-muted-foreground px-1">Email cannot be changed.</p>
                                 </div>
 
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Full Name *</label>
+                                        <div className="relative">
+                                            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                            <input
+                                                type="text"
+                                                required
+                                                value={fullName}
+                                                onChange={e => setFullName(e.target.value)}
+                                                placeholder="Jane Doe"
+                                                className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Mobile</label>
+                                        <div className="relative">
+                                            <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                            <input
+                                                type="tel"
+                                                value={phone}
+                                                onChange={e => setPhone(e.target.value)}
+                                                placeholder="04XX XXX XXX"
+                                                className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="space-y-2">
-                                    <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Full Name</label>
+                                    <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Gender</label>
+                                    <input
+                                        type="text"
+                                        disabled
+                                        value={{ male: 'Male', female: 'Female', non_binary: 'Non-binary', prefer_not_to_say: 'Prefer not to say' }[gender] ?? (gender || 'Not specified')}
+                                        className="w-full bg-muted/30 border-border border rounded-xl px-4 py-4 text-muted-foreground cursor-not-allowed outline-none"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Address</label>
                                     <div className="relative">
-                                        <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                        <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                                         <input
                                             type="text"
-                                            required
-                                            value={fullName}
-                                            onChange={(e) => setFullName(e.target.value)}
-                                            placeholder="Your Name"
+                                            value={address}
+                                            onChange={e => setAddress(e.target.value)}
+                                            placeholder="123 Main St, Suburb QLD 4000"
                                             className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
                                         />
                                     </div>
                                 </div>
+                            </div>
 
-                                <div className="space-y-2 md:col-span-2">
-                                    <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Avatar Profile Picture</label>
-                                    <div className="flex items-center gap-4 bg-muted/30 p-4 border border-border rounded-xl">
-                                        <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center overflow-hidden border-2 border-accent/20 shrink-0">
-                                            {avatarUrl ? (
-                                                <img src={avatarUrl} alt="Avatar Preview" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <User className="w-6 h-6 text-accent" />
-                                            )}
+                            {/* Licence Details */}
+                            <div className="space-y-5 pt-2 border-t border-border">
+                                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 pt-2">Licence Details</p>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Licence Number</label>
+                                        <div className="relative">
+                                            <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                            <input
+                                                type="text"
+                                                value={licenseNumber}
+                                                onChange={e => setLicenseNumber(e.target.value)}
+                                                placeholder="e.g. 012345678"
+                                                className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                            />
                                         </div>
-                                        <div className="flex-grow flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm font-bold">Upload new photo</p>
-                                                <p className="text-xs text-muted-foreground">Larger images will be resized.</p>
-                                            </div>
-                                            <label className="cursor-pointer">
-                                                <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" disabled={isUploadingAvatar} />
-                                                <div className={`text-xs font-bold uppercase tracking-widest border border-border px-4 py-2 rounded-full flex items-center gap-2 transition-colors ${isUploadingAvatar ? 'opacity-50' : 'hover:bg-accent hover:text-white bg-white text-black'}`}>
-                                                    <Camera className="w-4 h-4" />
-                                                    {isUploadingAvatar ? 'Uploading...' : 'Upload'}
-                                                </div>
-                                            </label>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Licence Expiry</label>
+                                        <div className="relative">
+                                            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                            <input
+                                                type="date"
+                                                value={licenseExpiry}
+                                                onChange={e => setLicenseExpiry(e.target.value)}
+                                                className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                            />
                                         </div>
                                     </div>
                                 </div>
-
-                                {( profile as any)?.role === 'instructor' && (
-                                    <>
-                                        <div className="space-y-2 md:col-span-2">
-                                            <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Bio / About Me</label>
-                                            <textarea
-                                                rows={4}
-                                                value={bio}
-                                                onChange={(e) => setBio(e.target.value)}
-                                                placeholder="Tell students about your teaching style and experience..."
-                                                className="w-full bg-muted/50 border-border border rounded-xl px-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none resize-none"
-                                            />
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Years of Experience</label>
-                                            <input
-                                                type="number"
-                                                value={experience}
-                                                onChange={(e) => setExperience(parseInt(e.target.value))}
-                                                className="w-full bg-muted/50 border-border border rounded-xl px-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
-                                            />
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Car Model</label>
-                                            <input
-                                                type="text"
-                                                value={carModel}
-                                                onChange={(e) => setCarModel(e.target.value)}
-                                                placeholder="e.g. Toyota Corolla 2023"
-                                                className="w-full bg-muted/50 border-border border rounded-xl px-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
-                                            />
-                                        </div>
-
-                                        <div className="space-y-2 md:col-span-2">
-                                            <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Languages (comma separated)</label>
-                                            <input
-                                                type="text"
-                                                value={languages}
-                                                onChange={(e) => setLanguages(e.target.value)}
-                                                placeholder="e.g. English, Spanish, Mandarin"
-                                                className="w-full bg-muted/50 border-border border rounded-xl px-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
-                                            />
-                                        </div>
-                                    </>
-                                )}
                             </div>
 
-                            <div className="pt-6 border-t border-border">
+                            <div className="pt-2">
                                 <Button type="submit" size="lg" className="rounded-xl gap-2 min-w-[200px]" isLoading={loading}>
                                     <Save className="w-5 h-5" /> Save Changes
                                 </Button>

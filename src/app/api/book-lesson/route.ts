@@ -111,7 +111,6 @@ export async function POST(req: Request) {
                     startTime: slots[0].start_time,
                     pickupAddress,
                     transmissionType,
-                    creditsRemaining: profile.credits_remaining - numSlots
                 })
 
                 for (const slot of slots as { start_time: string; end_time: string }[]) {

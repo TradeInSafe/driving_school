@@ -28,8 +28,11 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     const { id } = await params
     const db = getServiceRoleClient()
-    const { error } = await db.from('instructors').delete().eq('id', id)
 
+    // Nullify instructor_id on any bookings before deleting
+    await db.from('bookings').update({ instructor_id: null }).eq('instructor_id', id)
+
+    const { error } = await db.from('instructors').delete().eq('id', id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return new NextResponse(null, { status: 204 })
 }

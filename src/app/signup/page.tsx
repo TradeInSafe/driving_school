@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Mail, Lock, User, UserPlus, Chrome, LogIn, AlertCircle } from 'lucide-react'
+import { Mail, Lock, User, UserPlus, Chrome, LogIn, AlertCircle, Phone, MapPin, CreditCard, Calendar } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 
 export default function SignUpPage() {
@@ -12,6 +12,11 @@ export default function SignUpPage() {
     const [fullName, setFullName] = useState('')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
+    const [phone, setPhone] = useState('')
+    const [address, setAddress] = useState('')
+    const [gender, setGender] = useState('')
+    const [licenseNumber, setLicenseNumber] = useState('')
+    const [licenseExpiry, setLicenseExpiry] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [redirect, setRedirect] = useState('/dashboard')
@@ -32,12 +37,20 @@ export default function SignUpPage() {
             const res = await fetch('/api/auth/signup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password, full_name: fullName }),
+                body: JSON.stringify({
+                    email,
+                    password,
+                    full_name: fullName,
+                    phone: phone || undefined,
+                    address: address || undefined,
+                    gender: gender || undefined,
+                    license_number: licenseNumber || undefined,
+                    license_expiry: licenseExpiry || undefined,
+                }),
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || 'Failed to create account')
             router.push(redirect)
-            router.refresh()
         } catch (err: any) {
             setError(err.message || 'Failed to create account')
         } finally {
@@ -84,51 +97,139 @@ export default function SignUpPage() {
                         <div className="flex-grow border-t border-border"></div>
                     </div>
 
-                    <form onSubmit={handleSignUp} className="space-y-6">
+                    <form onSubmit={handleSignUp} className="space-y-5">
+                        {/* Personal Details */}
+                        <div className="space-y-1">
+                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 pb-1">Personal Details</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Full Name *</label>
+                                    <div className="relative">
+                                        <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                        <input
+                                            type="text"
+                                            required
+                                            value={fullName}
+                                            onChange={(e) => setFullName(e.target.value)}
+                                            placeholder="Jane Doe"
+                                            className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-3.5 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Mobile *</label>
+                                    <div className="relative">
+                                        <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                        <input
+                                            type="tel"
+                                            required
+                                            value={phone}
+                                            onChange={(e) => setPhone(e.target.value)}
+                                            placeholder="04XX XXX XXX"
+                                            className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-3.5 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="space-y-2">
-                            <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Full Name</label>
+                            <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Gender *</label>
+                            <select
+                                required
+                                value={gender}
+                                onChange={(e) => setGender(e.target.value)}
+                                className="w-full bg-muted/50 border-border border rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none text-sm"
+                            >
+                                <option value="">Select gender</option>
+                                <option value="male">Male</option>
+                                <option value="female">Female</option>
+                                <option value="non_binary">Non-binary</option>
+                                <option value="prefer_not_to_say">Prefer not to say</option>
+                            </select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Address *</label>
                             <div className="relative">
-                                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                                 <input
                                     type="text"
                                     required
-                                    value={fullName}
-                                    onChange={(e) => setFullName(e.target.value)}
-                                    placeholder="Jane Doe"
-                                    className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                    value={address}
+                                    onChange={(e) => setAddress(e.target.value)}
+                                    placeholder="123 Main St, Suburb QLD 4000"
+                                    className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-3.5 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
                                 />
                             </div>
                         </div>
 
-                        <div className="space-y-2">
-                            <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Email</label>
-                            <div className="relative">
-                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                                <input
-                                    type="email"
-                                    required
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    placeholder="name@example.com"
-                                    className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
-                                />
+                        {/* Licence Details */}
+                        <div className="space-y-1 pt-1">
+                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 pb-1">Licence Details</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Licence Number</label>
+                                    <div className="relative">
+                                        <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                        <input
+                                            type="text"
+                                            value={licenseNumber}
+                                            onChange={(e) => setLicenseNumber(e.target.value)}
+                                            placeholder="e.g. 012345678"
+                                            className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-3.5 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Licence Expiry</label>
+                                    <div className="relative">
+                                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                        <input
+                                            type="date"
+                                            value={licenseExpiry}
+                                            onChange={(e) => setLicenseExpiry(e.target.value)}
+                                            className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-3.5 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                        />
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="space-y-2">
-                            <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Password</label>
-                            <div className="relative">
-                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                                <input
-                                    type="password"
-                                    required
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    placeholder="••••••••"
-                                    className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-4 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
-                                />
+                        {/* Account Details */}
+                        <div className="space-y-1 pt-1">
+                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 pb-1">Account Details</p>
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Email *</label>
+                                    <div className="relative">
+                                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                        <input
+                                            type="email"
+                                            required
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            placeholder="name@example.com"
+                                            className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-3.5 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-bold uppercase tracking-wider text-foreground/60 px-1">Password *</label>
+                                    <div className="relative">
+                                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                                        <input
+                                            type="password"
+                                            required
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            placeholder="••••••••"
+                                            className="w-full bg-muted/50 border-border border rounded-xl pl-12 pr-5 py-3.5 focus:ring-2 focus:ring-accent focus:bg-white transition-all outline-none"
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground px-1">Minimum 8 characters.</p>
+                                </div>
                             </div>
-                            <p className="text-[10px] text-muted-foreground px-1">Minimum 8 characters.</p>
                         </div>
 
                         <Button type="submit" size="lg" className="w-full h-14 rounded-xl gap-2" isLoading={loading}>

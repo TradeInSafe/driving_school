@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const db = getServiceRoleClient()
     const { data: user } = await db
         .from('users')
-        .select('id, email, full_name, phone, address, credits_remaining, package_expiry')
+        .select('id, email, full_name, phone, address, gender, license_number, license_expiry')
         .eq('id', session.id)
         .single()
 

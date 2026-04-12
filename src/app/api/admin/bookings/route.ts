@@ -7,7 +7,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { studentId, instructorId, lessonId, date, time, transmission, vehicleType, deductCredit, pickupAddress, paymentMethod, newStudent } = await request.json()
+    const { studentId, instructorId, lessonId, date, time, transmission, vehicleType, pickupAddress, paymentMethod, newStudent } = await request.json()
+    // newStudent fields: full_name, email, phone, address, gender, license_number, license_expiry
     const db = getServiceRoleClient()
 
     // Resolve student — create new user record if needed
@@ -22,7 +23,15 @@ export async function POST(request: NextRequest) {
         } else {
             const { data: newUser, error: createErr } = await db
                 .from('users')
-                .insert({ email, full_name: newStudent.full_name, phone: newStudent.phone || null })
+                .insert({
+                    email,
+                    full_name: newStudent.full_name,
+                    phone: newStudent.phone || null,
+                    address: newStudent.address || null,
+                    gender: newStudent.gender || null,
+                    license_number: newStudent.license_number || null,
+                    license_expiry: newStudent.license_expiry || null,
+                })
                 .select('id')
                 .single()
             if (createErr || !newUser) {
@@ -68,21 +77,13 @@ export async function POST(request: NextRequest) {
         start_time: startTime.toISOString(),
         end_time: endTime.toISOString(),
         status: 'scheduled',
-        payment_status: paymentMethod || 'pay_in_person',
+        payment_status: paymentMethod || 'pending',
         pickup_address: pickupAddress || 'Admin booking',
         vehicle_type: vehicleType || 'car',
         transmission_type: vehicleType === 'truck' ? null : (transmission || 'auto'),
-        credits_used: deductCredit ? 1 : 0,
     })
 
     if (bookingError) return NextResponse.json({ error: bookingError.message }, { status: 500 })
-
-    if (deductCredit) {
-        const { data: userRow } = await db.from('users').select('credits_remaining').eq('id', resolvedStudentId).single()
-        await db.from('users')
-            .update({ credits_remaining: Math.max(0, (userRow?.credits_remaining || 0) - 1) })
-            .eq('id', resolvedStudentId)
-    }
 
     return NextResponse.json({ success: true }, { status: 201 })
 }

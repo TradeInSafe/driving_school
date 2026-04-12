@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Menu, X, Car, User, LogOut, LayoutDashboard } from 'lucide-react'
+import { Menu, X, User, LogOut, LayoutDashboard } from 'lucide-react'
 import { Button } from './ui/Button'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase' // used for public settings fetch only
@@ -39,22 +39,18 @@ export const Navbar = () => {
     const getDashboardLink = () => '/dashboard'
 
     return (
-        <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${isScrolled ? 'glass py-3 shadow-sm' : 'bg-transparent py-5'}`}>
+        <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${isScrolled ? 'bg-white py-3 shadow-sm' : 'bg-white py-5'}`}>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex justify-between items-center">
-                    <Link href="/" className="flex items-center gap-2">
-                        {logoUrl ? (
-                            <img src={logoUrl} alt="Brisbane Bayside Driving School" className="h-10 object-contain" />
-                        ) : (
-                            <>
-                                <div className="bg-secondary p-2 rounded-lg">
-                                    <Car className="text-primary w-6 h-6" />
-                                </div>
-                                <span className="text-xl font-bold tracking-tight text-primary">
-                                    Brisbane Bayside <span className="text-accent">Driving School</span>
-                                </span>
-                            </>
-                        )}
+                    <Link href="/" className="flex items-center gap-3">
+                        <img
+                            src={logoUrl || '/drivingschool_logo.avif'}
+                            alt="Brisbane Bayside Driving School"
+                            className="h-18 object-contain"
+                        />
+                        <span className="text-xl font-bold tracking-tight text-primary">
+                            Brisbane Bayside <span className="text-accent">Driving School</span>
+                        </span>
                     </Link>
 
                     {/* Desktop Links */}

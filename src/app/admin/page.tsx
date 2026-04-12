@@ -141,13 +141,20 @@ export default function AdminDashboard() {
     const [inquiries, setInquiries] = useState<any[]>([])
     const [allBookings, setAllBookings] = useState<any[]>([])
     const [instructors, setInstructors] = useState<any[]>([])
+    const [vehicleHires, setVehicleHires] = useState<any[]>([])
+    const [showNewHireModal, setShowNewHireModal] = useState(false)
+    const [hireForm, setHireForm] = useState({ title: '', description: '', vehicle_type: 'car', duration_minutes: '60', price: '' })
+    const [editingHire, setEditingHire] = useState<any | null>(null)
     const [showNewInstructorModal, setShowNewInstructorModal] = useState(false)
     const [newInstructorForm, setNewInstructorForm] = useState({ full_name: '', email: '', phone: '', bio: '', experience_years: '', car_model: '', languages: 'English', rating: '5' })
-    const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'lessons' | 'users' | 'bookings' | 'settings' | 'payments' | 'instructors' | 'reports'>('overview')
+    const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'lessons' | 'hires' | 'users' | 'bookings' | 'settings' | 'payments' | 'instructors' | 'reports'>('overview')
 
     // Instructor management state
     const [selectedInstructor, setSelectedInstructor] = useState<any | null>(null)
     const [instructorForm, setInstructorForm] = useState({ full_name: '', email: '', bio: '', experience_years: '', car_model: '', languages: '', phone: '', rating: '' })
+    const [photoUploading, setPhotoUploading] = useState(false)
+    const [bulkAvailForm, setBulkAvailForm] = useState({ startMonth: '', endMonth: '', start_time: '07:00', end_time: '19:00' })
+    const [bulkAvailLoading, setBulkAvailLoading] = useState(false)
     const [instructorAvailability, setInstructorAvailability] = useState<any[]>([])
     const [availabilityLoading, setAvailabilityLoading] = useState(false)
     const [newSlot, setNewSlot] = useState({ day_of_week: '1', start_time: '09:00', end_time: '17:00' })
@@ -162,9 +169,8 @@ export default function AdminDashboard() {
     })
     const [lessonEditLoading, setLessonEditLoading] = useState(false)
     const [lessonEditError, setLessonEditError] = useState<string | null>(null)
-    const [showAdjustCreditsModal, setShowAdjustCreditsModal] = useState<string | null>(null)
     const [editingUser, setEditingUser] = useState<any | null>(null)
-    const [userForm, setUserForm] = useState({ full_name: '', phone: '', address: '', credits_remaining: 0, package_expiry: '' })
+    const [userForm, setUserForm] = useState({ full_name: '', phone: '', address: '' })
     const [userFormLoading, setUserFormLoading] = useState(false)
     const [userFormError, setUserFormError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
@@ -174,7 +180,7 @@ export default function AdminDashboard() {
     const [editingBooking, setEditingBooking] = useState<any | null>(null)
     const [bookingEditForm, setBookingEditForm] = useState({
         instructorId: '', lessonId: '', date: '', time: '',
-        status: 'scheduled', paymentStatus: 'pay_in_person',
+        status: 'scheduled', paymentStatus: 'pending',
         pickupAddress: '', vehicleType: 'car', transmissionType: 'auto',
     })
     const [bookingEditLoading, setBookingEditLoading] = useState(false)
@@ -195,14 +201,17 @@ export default function AdminDashboard() {
         time: '',
         transmission: 'auto',
         vehicleType: 'car' as 'car' | 'truck',
-        deductCredit: false,
         pickupAddress: '',
-        paymentMethod: 'pay_in_person' as 'paid' | 'pay_in_person',
+        paymentMethod: 'pending' as 'paid' | 'pending',
     })
     const [newStudentForm, setNewStudentForm] = useState({
         full_name: '',
         email: '',
         phone: '',
+        address: '',
+        gender: '',
+        license_number: '',
+        license_expiry: '',
     })
 
     useEffect(() => {
@@ -270,6 +279,7 @@ export default function AdminDashboard() {
             setInquiries(inquiries)
             setAllBookings(allBookings)
             setInstructors(data.instructors || [])
+            setVehicleHires(data.vehicleHires || [])
 
             setRecentUsers(
                 [...allUsers]
@@ -301,21 +311,6 @@ export default function AdminDashboard() {
             console.error('fetchAdminData error:', e)
         } finally {
             setLoading(false)
-        }
-    }
-
-    const adjustStudentCredits = async (studentId: string, amount: number) => {
-        try {
-            const res = await fetch(`/api/admin/users/${studentId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'adjust_credits', amount }),
-            })
-            if (!res.ok) throw new Error((await res.json()).error)
-            fetchAdminData()
-            setShowAdjustCreditsModal(null)
-        } catch (err: any) {
-            alert('Error adjusting credits: ' + err.message)
         }
     }
 
@@ -428,8 +423,6 @@ const toggleLessonStatus = async (id: string, currentStatus: boolean) => {
             full_name: u.full_name || '',
             phone: u.phone || '',
             address: u.address || '',
-            credits_remaining: u.credits_remaining || 0,
-            package_expiry: u.package_expiry ? u.package_expiry.slice(0, 10) : '',
         })
         setUserFormError(null)
     }
@@ -443,8 +436,6 @@ const toggleLessonStatus = async (id: string, currentStatus: boolean) => {
                 full_name: userForm.full_name,
                 phone: userForm.phone,
                 address: userForm.address,
-                credits_remaining: Number(userForm.credits_remaining),
-                package_expiry: userForm.package_expiry ? new Date(userForm.package_expiry).toISOString() : null,
             }
             const res = await fetch(`/api/admin/users/${editingUser.id}`, {
                 method: 'PATCH',
@@ -472,6 +463,47 @@ const toggleLessonStatus = async (id: string, currentStatus: boolean) => {
         }
     }
 
+    const handleSaveHire = async (e: React.FormEvent) => {
+        e.preventDefault()
+        try {
+            const payload = {
+                title: hireForm.title,
+                description: hireForm.description || null,
+                vehicle_type: hireForm.vehicle_type,
+                duration_minutes: Number(hireForm.duration_minutes),
+                price: Number(hireForm.price),
+            }
+            if (editingHire) {
+                const res = await fetch(`/api/admin/hires/${editingHire.id}`, {
+                    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+                })
+                if (!res.ok) throw new Error((await res.json()).error)
+                setEditingHire(null)
+            } else {
+                const res = await fetch('/api/admin/hires', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+                })
+                if (!res.ok) throw new Error((await res.json()).error)
+                setShowNewHireModal(false)
+            }
+            setHireForm({ title: '', description: '', vehicle_type: 'car', duration_minutes: '60', price: '' })
+            fetchAdminData()
+        } catch (err: any) {
+            alert('Error saving hire option: ' + err.message)
+        }
+    }
+
+    const deleteHire = async (id: string) => {
+        if (!confirm('Delete this hire option? This cannot be undone.')) return
+        try {
+            const res = await fetch(`/api/admin/hires/${id}`, { method: 'DELETE' })
+            if (!res.ok) throw new Error((await res.json()).error)
+            fetchAdminData()
+        } catch (err: any) {
+            alert('Error deleting hire option: ' + err.message)
+        }
+    }
+
     const deleteBooking = async (bookingId: string) => {
         if (!confirm('Are you sure you want to completely delete this booking?')) return
         try {
@@ -493,7 +525,7 @@ const toggleLessonStatus = async (id: string, currentStatus: boolean) => {
             date: dateStr,
             time: timeStr,
             status: b.status || 'scheduled',
-            paymentStatus: b.payment_status || 'pay_in_person',
+            paymentStatus: b.payment_status || 'pending',
             pickupAddress: b.pickup_address || '',
             vehicleType: b.vehicle_type || 'car',
             transmissionType: b.transmission_type || 'auto',
@@ -577,8 +609,8 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
             if (!res.ok) throw new Error(data.error)
 
             setShowManualBookingModal(false)
-            setBookingData({ studentId: '', instructorId: '', lessonId: '', date: '', time: '', transmission: 'auto', vehicleType: 'car', deductCredit: false, pickupAddress: '', paymentMethod: 'pay_in_person' })
-            setNewStudentForm({ full_name: '', email: '', phone: '' })
+            setBookingData({ studentId: '', instructorId: '', lessonId: '', date: '', time: '', transmission: 'auto', vehicleType: 'car' as 'car' | 'truck', pickupAddress: '', paymentMethod: 'pending' as 'paid' | 'pending' })
+            setNewStudentForm({ full_name: '', email: '', phone: '', address: '', gender: '', license_number: '', license_expiry: '' })
             setManualBookingTab('existing')
             fetchAdminData()
         } catch (err: any) {
@@ -658,6 +690,47 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
             alert('Instructor updated successfully!')
         } catch (err: any) {
             alert('Error saving instructor: ' + err.message)
+        }
+    }
+
+    const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!selectedInstructor || !e.target.files?.[0]) return
+        const file = e.target.files[0]
+        setPhotoUploading(true)
+        try {
+            const fd = new FormData()
+            fd.append('photo', file)
+            const res = await fetch(`/api/admin/instructors/${selectedInstructor.id}/photo`, { method: 'POST', body: fd })
+            if (!res.ok) throw new Error((await res.json()).error)
+            const { photo_url } = await res.json()
+            setSelectedInstructor((prev: any) => ({ ...prev, photo_url }))
+            setInstructors((prev: any[]) => prev.map(i => i.id === selectedInstructor.id ? { ...i, photo_url } : i))
+        } catch (err: any) {
+            alert('Error uploading photo: ' + err.message)
+        } finally {
+            setPhotoUploading(false)
+        }
+    }
+
+    const handleBulkAvailability = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!selectedInstructor) return
+        if (!confirm(`This will replace all existing availability for ${selectedInstructor.full_name} with ${bulkAvailForm.start_time}–${bulkAvailForm.end_time} every day. Continue?`)) return
+        setBulkAvailLoading(true)
+        try {
+            const res = await fetch(`/api/admin/instructors/${selectedInstructor.id}/availability/bulk`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ start_time: bulkAvailForm.start_time, end_time: bulkAvailForm.end_time }),
+            })
+            if (!res.ok) throw new Error((await res.json()).error)
+            const updated = await fetch(`/api/admin/instructors/${selectedInstructor.id}/availability`)
+            if (updated.ok) setInstructorAvailability(await updated.json())
+            alert(`Availability set for all 7 days (${bulkAvailForm.start_time}–${bulkAvailForm.end_time})`)
+        } catch (err: any) {
+            alert('Error setting availability: ' + err.message)
+        } finally {
+            setBulkAvailLoading(false)
         }
     }
 
@@ -823,6 +896,13 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                         Lessons
                     </Button>
                     <Button
+                        variant={activeTab === 'hires' ? 'accent' : 'outline'}
+                        className="rounded-2xl"
+                        onClick={() => setActiveTab('hires')}
+                    >
+                        Vehicle Hire
+                    </Button>
+                    <Button
                         variant={activeTab === 'users' ? 'accent' : 'outline'}
                         className="rounded-2xl"
                         onClick={() => setActiveTab('users')}
@@ -868,12 +948,11 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
             </header>
 
             {/* Analytics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {[
-                    { label: 'Total Revenue', value: `$${stats.totalRevenue}`, icon: DollarSign, color: 'text-green-600', bg: 'bg-green-100', trend: '+12.5%' },
-                    { label: 'Active Bookings', value: stats.activeBookings, icon: Calendar, color: 'text-accent', bg: 'bg-accent/10', trend: '+5.2%' },
-                    { label: 'New Students', value: stats.newStudents, icon: Users, color: 'text-secondary', bg: 'bg-secondary/20', trend: '+18.1%' },
-                    { label: 'Pending Apps', value: stats.pendingInstructors, icon: UserCheck, color: 'text-orange-600', bg: 'bg-orange-100', trend: 'N/A' },
+                    { label: 'Total Revenue', value: `$${stats.totalRevenue}`, icon: DollarSign, color: 'text-green-600', bg: 'bg-green-100', trend: '' },
+                    { label: 'Active Bookings', value: stats.activeBookings, icon: Calendar, color: 'text-accent', bg: 'bg-accent/10', trend: '' },
+                    { label: 'Total Students', value: stats.newStudents, icon: Users, color: 'text-secondary', bg: 'bg-secondary/20', trend: '' },
                 ].map((stat, i) => (
                     <motion.div
                         key={stat.label}
@@ -886,11 +965,6 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                             <div className={`${stat.bg} ${stat.color} p-3 rounded-2xl`}>
                                 <stat.icon className="w-6 h-6" />
                             </div>
-                            {stat.trend !== 'N/A' && (
-                                <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full flex items-center gap-1">
-                                    <TrendingUp className="w-3 h-3" /> {stat.trend}
-                                </span>
-                            )}
                         </div>
                         <div>
                             <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">{stat.label}</p>
@@ -905,41 +979,42 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                 <div className="space-y-6">
                     {activeTab === 'overview' && (
                         <>
-                            <div className="flex justify-between items-center">
-                                <h2 className="text-2xl font-bold font-outfit">Recent User Registrations</h2>
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                    <input
-                                        type="text"
-                                        placeholder="Search users..."
-                                        className="pl-10 pr-4 py-2 bg-muted/50 border-border border rounded-xl text-sm focus:ring-2 focus:ring-accent outline-none w-64"
-                                    />
-                                </div>
-                            </div>
-
+                            <h2 className="text-2xl font-bold font-outfit">Recent Bookings</h2>
                             <div className="bg-card border border-border rounded-[2.5rem] overflow-hidden shadow-sm">
                                 <table className="w-full text-left border-collapse">
                                     <thead>
                                         <tr className="bg-muted/50 text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                                            <th className="px-6 py-5">User</th>
+                                            <th className="px-6 py-5">Student</th>
+                                            <th className="px-6 py-5">Date & Time</th>
                                             <th className="px-6 py-5">Status</th>
-                                            <th className="px-6 py-5 text-right">Action</th>
+                                            <th className="px-6 py-5">Payment</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border/50">
-                                        {recentUsers.map(u => (
-                                            <tr key={u.id} className="hover:bg-muted/30 transition-colors group">
-                                                <td className="px-6 py-4 text-sm font-medium">{u.name}</td>
-                                                <td className="px-6 py-4">
-                                                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${u.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                                                        {u.status}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <Button variant="ghost" size="sm">Manage</Button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {allBookings.slice(0, 10).map((b: any) => {
+                                            const student = allUsers.find((u: any) => u.id === b.student_id)
+                                            return (
+                                                <tr key={b.id} className="hover:bg-muted/30 transition-colors">
+                                                    <td className="px-6 py-4 text-sm font-medium">{student?.full_name || 'Unknown'}</td>
+                                                    <td className="px-6 py-4 text-sm text-muted-foreground">
+                                                        {new Date(b.start_time).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${b.status === 'scheduled' ? 'bg-blue-100 text-blue-700' : b.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                            {b.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${b.payment_status === 'paid' ? 'bg-green-100 text-green-700' : b.payment_status === 'pending' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                                            {b.payment_status}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                        {allBookings.length === 0 && (
+                                            <tr><td colSpan={4} className="px-6 py-10 text-center text-sm text-muted-foreground">No bookings yet.</td></tr>
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
@@ -1137,6 +1212,117 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                             </div>
                         </>
                     )}
+                    {activeTab === 'hires' && (
+                        <>
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-2xl font-bold font-outfit">Vehicle Hire for Test</h2>
+                                <Button size="sm" className="rounded-xl gap-2" onClick={() => { setEditingHire(null); setHireForm({ title: '', description: '', vehicle_type: 'car', duration_minutes: '60', price: '' }); setShowNewHireModal(true) }}>
+                                    <Plus className="w-4 h-4" /> New Hire Option
+                                </Button>
+                            </div>
+
+                            {(showNewHireModal || editingHire) && (
+                                <div className="bg-muted/30 p-6 rounded-2xl border border-border space-y-4">
+                                    <h3 className="font-bold">{editingHire ? 'Edit Hire Option' : 'Add New Hire Option'}</h3>
+                                    <form onSubmit={handleSaveHire} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <input
+                                            placeholder="Title (e.g. Car Hire for Test)"
+                                            required
+                                            value={hireForm.title}
+                                            onChange={e => setHireForm(f => ({ ...f, title: e.target.value }))}
+                                            className="bg-background border border-border p-2 rounded-lg"
+                                        />
+                                        <input
+                                            type="number" step="0.01" placeholder="Price ($)"
+                                            required
+                                            value={hireForm.price}
+                                            onChange={e => setHireForm(f => ({ ...f, price: e.target.value }))}
+                                            className="bg-background border border-border p-2 rounded-lg"
+                                        />
+                                        <input
+                                            type="number" placeholder="Duration (mins)"
+                                            required
+                                            value={hireForm.duration_minutes}
+                                            onChange={e => setHireForm(f => ({ ...f, duration_minutes: e.target.value }))}
+                                            className="bg-background border border-border p-2 rounded-lg"
+                                        />
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Vehicle Type</label>
+                                            <select
+                                                value={hireForm.vehicle_type}
+                                                onChange={e => setHireForm(f => ({ ...f, vehicle_type: e.target.value }))}
+                                                className="w-full bg-background border border-border p-2 rounded-lg"
+                                            >
+                                                <option value="car">Car</option>
+                                                <option value="truck">Truck</option>
+                                            </select>
+                                        </div>
+                                        <textarea
+                                            placeholder="Description (optional)"
+                                            rows={2}
+                                            value={hireForm.description}
+                                            onChange={e => setHireForm(f => ({ ...f, description: e.target.value }))}
+                                            className="md:col-span-2 bg-background border border-border p-2 rounded-lg resize-none"
+                                        />
+                                        <div className="md:col-span-3 flex justify-end gap-2">
+                                            <Button type="button" variant="ghost" onClick={() => { setShowNewHireModal(false); setEditingHire(null) }}>Cancel</Button>
+                                            <Button type="submit">{editingHire ? 'Save Changes' : 'Add Hire Option'}</Button>
+                                        </div>
+                                    </form>
+                                </div>
+                            )}
+
+                            <div className="bg-card border border-border rounded-[2.5rem] overflow-hidden shadow-sm">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-muted/50 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                            <th className="px-6 py-5">Title</th>
+                                            <th className="px-6 py-5">Vehicle</th>
+                                            <th className="px-6 py-5">Price</th>
+                                            <th className="px-6 py-5">Duration</th>
+                                            <th className="px-6 py-5">Status</th>
+                                            <th className="px-6 py-5 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border/50">
+                                        {vehicleHires.length === 0 && (
+                                            <tr><td colSpan={6} className="px-6 py-10 text-center text-sm text-muted-foreground">No hire options yet. Add one above.</td></tr>
+                                        )}
+                                        {vehicleHires.map((hire: any) => (
+                                            <tr key={hire.id} className="hover:bg-muted/30 transition-colors">
+                                                <td className="px-6 py-4 text-sm font-medium">
+                                                    {hire.title}
+                                                    {hire.description && <p className="text-xs text-muted-foreground truncate max-w-xs">{hire.description}</p>}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm">
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-full uppercase tracking-wide ${hire.vehicle_type === 'truck' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                        {hire.vehicle_type === 'truck' ? '🚛 Truck' : '🚗 Car'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-sm font-bold">${hire.price}</td>
+                                                <td className="px-6 py-4 text-sm text-muted-foreground">{hire.duration_minutes}m</td>
+                                                <td className="px-6 py-4">
+                                                    <button
+                                                        onClick={async () => {
+                                                            await fetch(`/api/admin/hires/${hire.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !hire.is_active }) })
+                                                            fetchAdminData()
+                                                        }}
+                                                        className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${hire.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+                                                    >
+                                                        {hire.is_active ? 'Active' : 'Inactive'}
+                                                    </button>
+                                                </td>
+                                                <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                                    <Button variant="ghost" size="sm" className="text-accent" onClick={() => { setEditingHire(hire); setHireForm({ title: hire.title, description: hire.description || '', vehicle_type: hire.vehicle_type, duration_minutes: String(hire.duration_minutes), price: String(hire.price) }); setShowNewHireModal(false) }}>Edit</Button>
+                                                    <Button variant="ghost" size="sm" className="text-red-500" onClick={() => deleteHire(hire.id)}>Delete</Button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
                     {activeTab === 'users' && (
                         <>
                             <div className="flex justify-between items-center text-sm">
@@ -1156,7 +1342,6 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                     <thead>
                                         <tr className="bg-muted/50 text-xs font-bold uppercase tracking-widest text-muted-foreground">
                                             <th className="px-6 py-5">Name</th>
-                                            <th className="px-6 py-5">Credits</th>
                                             <th className="px-6 py-5 text-right">Action</th>
                                         </tr>
                                     </thead>
@@ -1166,37 +1351,6 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                 <td className="px-6 py-4">
                                                     <p className="font-medium text-sm">{u.full_name}</p>
                                                     <p className="text-xs text-muted-foreground">{u.phone || 'No phone'}</p>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex items-center gap-3 relative">
-                                                        <span className="font-bold text-accent">{u.credits_remaining || 0}</span>
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            className="h-7 px-2 text-[10px] rounded-lg"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setShowAdjustCreditsModal(showAdjustCreditsModal === u.id ? null : u.id);
-                                                            }}
-                                                        >
-                                                            Adjust
-                                                        </Button>
-                                                        {showAdjustCreditsModal === u.id && (
-                                                            <motion.div
-                                                                initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                                                                animate={{ opacity: 1, scale: 1, y: 0 }}
-                                                                className="absolute left-0 top-full mt-2 z-50 bg-white border border-border p-4 rounded-2xl shadow-2xl flex flex-col gap-3 min-w-[160px]"
-                                                            >
-                                                                <p className="text-[10px] font-bold uppercase text-muted-foreground">Quick Adjust</p>
-                                                                <div className="flex gap-2">
-                                                                    <Button size="sm" variant="accent" className="flex-1" onClick={() => adjustStudentCredits(u.id, 1)}>+1</Button>
-                                                                    <Button size="sm" variant="secondary" className="flex-1" onClick={() => adjustStudentCredits(u.id, -1)}>-1</Button>
-                                                                </div>
-                                                                <div className="h-px bg-border" />
-                                                                <Button size="sm" variant="ghost" className="w-full text-xs" onClick={() => setShowAdjustCreditsModal(null)}>Close</Button>
-                                                            </motion.div>
-                                                        )}
-                                                    </div>
                                                 </td>
                                                 <td className="px-6 py-4 text-right space-x-2">
                                                     <Button variant="ghost" size="sm" className="text-accent underline" onClick={() => openEditUser(u)}>Edit</Button>
@@ -1279,10 +1433,10 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                     </span>
                                                     <span className={`inline-block ml-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
                                                         b.payment_status === 'paid' ? 'bg-green-100 text-green-700' :
-                                                        b.payment_status === 'pay_in_person' ? 'bg-amber-100 text-amber-700' :
+
                                                         'bg-gray-100 text-gray-500'
                                                     }`}>
-                                                        {b.payment_status === 'pay_in_person' ? 'Pay on day' : b.payment_status || 'pending'}
+                                                        {b.payment_status || 'pending'}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
@@ -1478,6 +1632,24 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                         <h3 className="text-lg font-bold font-outfit flex items-center gap-2">
                                             <UserCheck className="w-5 h-5 text-accent" /> Profile Details
                                         </h3>
+                                        {/* Photo Upload */}
+                                        <div className="flex items-center gap-6 mb-2">
+                                            <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-border bg-muted flex items-center justify-center shrink-0">
+                                                {selectedInstructor.photo_url ? (
+                                                    <img src={selectedInstructor.photo_url} alt={selectedInstructor.full_name} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <UserCheck className="w-8 h-8 text-muted-foreground" />
+                                                )}
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Profile Photo</label>
+                                                <label className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-xl border border-border bg-muted text-sm font-medium hover:border-accent transition-colors ${photoUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                                                    {photoUploading ? 'Uploading…' : 'Upload Photo'}
+                                                    <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} disabled={photoUploading} />
+                                                </label>
+                                            </div>
+                                        </div>
+
                                         <form onSubmit={handleSaveInstructor} className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                             <div className="space-y-1">
                                                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Full Name</label>
@@ -1527,6 +1699,43 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
 
                                     {/* Availability Calendar */}
                                     <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-sm space-y-5">
+                                        {/* Bulk availability setter */}
+                                        <form onSubmit={handleBulkAvailability} className="bg-muted/50 border border-border rounded-2xl p-5 space-y-4">
+                                            <div>
+                                                <h4 className="font-bold text-sm flex items-center gap-2"><Calendar className="w-4 h-4 text-accent" /> Set Availability for Date Range</h4>
+                                                <p className="text-xs text-muted-foreground mt-0.5">Replaces all current slots with a daily recurring window for every day of the week.</p>
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Start Month</label>
+                                                    <input type="month" required value={bulkAvailForm.startMonth}
+                                                        onChange={e => setBulkAvailForm(f => ({ ...f, startMonth: e.target.value }))}
+                                                        className="w-full bg-white border border-border p-2 rounded-xl text-sm outline-none" />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">End Month</label>
+                                                    <input type="month" required value={bulkAvailForm.endMonth}
+                                                        onChange={e => setBulkAvailForm(f => ({ ...f, endMonth: e.target.value }))}
+                                                        className="w-full bg-white border border-border p-2 rounded-xl text-sm outline-none" />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">From</label>
+                                                    <input type="time" required value={bulkAvailForm.start_time}
+                                                        onChange={e => setBulkAvailForm(f => ({ ...f, start_time: e.target.value }))}
+                                                        className="w-full bg-white border border-border p-2 rounded-xl text-sm outline-none" />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">To</label>
+                                                    <input type="time" required value={bulkAvailForm.end_time}
+                                                        onChange={e => setBulkAvailForm(f => ({ ...f, end_time: e.target.value }))}
+                                                        className="w-full bg-white border border-border p-2 rounded-xl text-sm outline-none" />
+                                                </div>
+                                            </div>
+                                            <Button type="submit" size="sm" className="rounded-xl gap-2" disabled={bulkAvailLoading}>
+                                                {bulkAvailLoading ? 'Updating…' : 'Apply to All Days'}
+                                            </Button>
+                                        </form>
+
                                         <div className="flex items-start justify-between gap-4">
                                             <div>
                                                 <h3 className="text-lg font-bold font-outfit flex items-center gap-2">
@@ -1540,7 +1749,6 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-green-400 inline-block" /> Available</span>
                                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300 inline-block" /> Disabled</span>
                                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" /> Paid booking</span>
-                                                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-orange-500 inline-block" /> Pay on day</span>
                                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-violet-500 inline-block" /> Pending</span>
                                             </div>
                                         </div>
@@ -1560,6 +1768,7 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                         center: 'title',
                                                         right: 'timeGridWeek,dayGridMonth',
                                                     }}
+                                                    locale="en-AU"
                                                     dayHeaderFormat={{ day: '2-digit', month: '2-digit', omitCommas: true }}
                                                     titleFormat={{ day: '2-digit', month: '2-digit', year: 'numeric' }}
                                                     allDaySlot={false}
@@ -1599,8 +1808,8 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                                     title: student?.full_name || 'Booked',
                                                                     start: b.start_time,
                                                                     end: b.end_time,
-                                                                    backgroundColor: b.payment_status === 'paid' ? '#3b82f6' : b.payment_status === 'pay_in_person' ? '#f97316' : '#8b5cf6',
-                                                                    borderColor: b.payment_status === 'paid' ? '#2563eb' : b.payment_status === 'pay_in_person' ? '#ea580c' : '#7c3aed',
+                                                                    backgroundColor: b.payment_status === 'paid' ? '#3b82f6' : '#8b5cf6',
+                                                                    borderColor: b.payment_status === 'paid' ? '#2563eb' : '#7c3aed',
                                                                     textColor: '#fff',
                                                                     extendedProps: { type: 'booking', student: student?.full_name, lesson: lesson?.title, status: b.status, payment: b.payment_status },
                                                                 }
@@ -1612,7 +1821,7 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                                 <div className="px-1.5 py-1 h-full overflow-hidden">
                                                                     <div className="text-[11px] font-bold leading-tight truncate">📚 {arg.event.extendedProps.student}</div>
                                                                     <div className="text-[10px] opacity-90 truncate">{arg.event.extendedProps.lesson}</div>
-                                                                    <div className="text-[10px] opacity-80 capitalize">{arg.event.extendedProps.payment === 'pay_in_person' ? 'Pay on day' : arg.event.extendedProps.payment}</div>
+                                                                    <div className="text-[10px] opacity-80 capitalize">{arg.event.extendedProps.payment}</div>
                                                                 </div>
                                                             )
                                                         }
@@ -2008,7 +2217,6 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                     >
                                         <option value="pending">Pending</option>
                                         <option value="paid">Paid</option>
-                                        <option value="pay_in_person">Pay on Day</option>
                                         <option value="failed">Failed</option>
                                         <option value="refunded">Refunded</option>
                                     </select>
@@ -2118,16 +2326,6 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                         className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
                                     />
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Credits</label>
-                                    <input
-                                        type="number"
-                                        min={0}
-                                        value={userForm.credits_remaining}
-                                        onChange={e => setUserForm(f => ({ ...f, credits_remaining: Number(e.target.value) }))}
-                                        className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
-                                    />
-                                </div>
                             </div>
                             <div className="space-y-2">
                                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Address</label>
@@ -2136,15 +2334,6 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                     value={userForm.address}
                                     onChange={e => setUserForm(f => ({ ...f, address: e.target.value }))}
                                     placeholder="Home address"
-                                    className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Package Expiry</label>
-                                <input
-                                    type="date"
-                                    value={userForm.package_expiry}
-                                    onChange={e => setUserForm(f => ({ ...f, package_expiry: e.target.value }))}
                                     className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
                                 />
                             </div>
@@ -2212,27 +2401,66 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                         ))}
                                     </select>
                                 ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                        <div className="space-y-1">
-                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Full Name *</label>
-                                            <input required type="text" placeholder="Jane Smith"
-                                                value={newStudentForm.full_name}
-                                                onChange={e => setNewStudentForm(f => ({ ...f, full_name: e.target.value }))}
-                                                className="w-full bg-muted border border-border p-2.5 rounded-xl text-sm outline-none" />
+                                    <div className="space-y-3">
+                                        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">Personal Details</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Full Name *</label>
+                                                <input required type="text" placeholder="Jane Smith"
+                                                    value={newStudentForm.full_name}
+                                                    onChange={e => setNewStudentForm(f => ({ ...f, full_name: e.target.value }))}
+                                                    className="w-full bg-muted border border-border p-2.5 rounded-xl text-sm outline-none" />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Mobile *</label>
+                                                <input required type="tel" placeholder="04xx xxx xxx"
+                                                    value={newStudentForm.phone}
+                                                    onChange={e => setNewStudentForm(f => ({ ...f, phone: e.target.value }))}
+                                                    className="w-full bg-muted border border-border p-2.5 rounded-xl text-sm outline-none" />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Email</label>
+                                                <input type="email" placeholder="jane@email.com"
+                                                    value={newStudentForm.email}
+                                                    onChange={e => setNewStudentForm(f => ({ ...f, email: e.target.value }))}
+                                                    className="w-full bg-muted border border-border p-2.5 rounded-xl text-sm outline-none" />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Gender</label>
+                                                <select value={newStudentForm.gender}
+                                                    onChange={e => setNewStudentForm(f => ({ ...f, gender: e.target.value }))}
+                                                    className="w-full bg-muted border border-border p-2.5 rounded-xl text-sm outline-none">
+                                                    <option value="">Select gender</option>
+                                                    <option value="male">Male</option>
+                                                    <option value="female">Female</option>
+                                                    <option value="non_binary">Non-binary</option>
+                                                    <option value="prefer_not_to_say">Prefer not to say</option>
+                                                </select>
+                                            </div>
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Email</label>
-                                            <input type="email" placeholder="jane@email.com"
-                                                value={newStudentForm.email}
-                                                onChange={e => setNewStudentForm(f => ({ ...f, email: e.target.value }))}
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Address</label>
+                                            <input type="text" placeholder="123 Main St, Suburb QLD 4000"
+                                                value={newStudentForm.address}
+                                                onChange={e => setNewStudentForm(f => ({ ...f, address: e.target.value }))}
                                                 className="w-full bg-muted border border-border p-2.5 rounded-xl text-sm outline-none" />
                                         </div>
-                                        <div className="space-y-1">
-                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Phone</label>
-                                            <input type="text" placeholder="04xx xxx xxx"
-                                                value={newStudentForm.phone}
-                                                onChange={e => setNewStudentForm(f => ({ ...f, phone: e.target.value }))}
-                                                className="w-full bg-muted border border-border p-2.5 rounded-xl text-sm outline-none" />
+                                        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 pt-1">Licence Details</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Licence Number</label>
+                                                <input type="text" placeholder="012345678"
+                                                    value={newStudentForm.license_number}
+                                                    onChange={e => setNewStudentForm(f => ({ ...f, license_number: e.target.value }))}
+                                                    className="w-full bg-muted border border-border p-2.5 rounded-xl text-sm outline-none" />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Licence Expiry</label>
+                                                <input type="date"
+                                                    value={newStudentForm.license_expiry}
+                                                    onChange={e => setNewStudentForm(f => ({ ...f, license_expiry: e.target.value }))}
+                                                    className="w-full bg-muted border border-border p-2.5 rounded-xl text-sm outline-none" />
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -2337,7 +2565,7 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                     <select className="w-full bg-muted border border-border p-3 rounded-xl outline-none text-sm"
                                         value={bookingData.paymentMethod}
                                         onChange={e => setBookingData({ ...bookingData, paymentMethod: e.target.value as any })}>
-                                        <option value="pay_in_person">Pay During Class</option>
+                                        <option value="pending">Pending</option>
                                         <option value="paid">Already Paid</option>
                                     </select>
                                 </div>
@@ -2349,13 +2577,6 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                     value={bookingData.pickupAddress}
                                     onChange={e => setBookingData({ ...bookingData, pickupAddress: e.target.value })}
                                     className="w-full bg-muted border border-border p-3 rounded-xl outline-none text-sm" />
-                            </div>
-
-                            <div className="flex items-center gap-3">
-                                <input type="checkbox" id="deduct" checked={bookingData.deductCredit}
-                                    onChange={e => setBookingData({ ...bookingData, deductCredit: e.target.checked })}
-                                    className="w-5 h-5 rounded border-border text-accent focus:ring-accent" />
-                                <label htmlFor="deduct" className="text-sm font-bold">Deduct 1 Credit from Student</label>
                             </div>
 
                             <Button type="submit" size="lg" className="w-full rounded-2xl h-14 text-lg" isLoading={loading}>

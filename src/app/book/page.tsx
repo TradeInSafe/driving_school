@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, ChevronLeft, Calendar as CalendarIcon, Clock, User, CheckCircle2, Star, CreditCard, ShieldCheck, AlertCircle } from 'lucide-react'
+import { ChevronRight, ChevronLeft, Calendar as CalendarIcon, Clock, User, CheckCircle2, CreditCard, AlertCircle, Star, ShieldCheck, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
@@ -36,20 +36,23 @@ function BookingPage() {
     const [selectedInstructor, setSelectedInstructor] = useState<any>(null)
     const [selectedSlots, setSelectedSlots] = useState<any[]>([])
     const [lessons, setLessons] = useState<any[]>([])
+    const [hires, setHires] = useState<any[]>([])
+    const [selectedHire, setSelectedHire] = useState<any>(null)
+    const [bookingMode, setBookingMode] = useState<'lesson' | 'hire'>(() =>
+        searchParams.get('mode') === 'hire' ? 'hire' : 'lesson'
+    )
+    const [needsInstructor, setNeedsInstructor] = useState(false)
     const [instructors, setInstructors] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [clientSecret, setClientSecret] = useState<string | null>(null)
+    const [pendingBookingIds, setPendingBookingIds] = useState<string | null>(null)
     const [isBookingComplete, setIsBookingComplete] = useState(false)
     const [instructorAvailability, setInstructorAvailability] = useState<any[]>([])
     const [instructorBookings, setInstructorBookings] = useState<any[]>([])
+    const [hireBookings, setHireBookings] = useState<any[]>([])
     const [availabilityLoading, setAvailabilityLoading] = useState(false)
     const [pickupAddress, setPickupAddress] = useState('')
-    const [vehicleType, setVehicleType] = useState<'car' | 'truck'>('car')
-    const [transmissionType, setTransmissionType] = useState<'auto' | 'manual'>('auto')
-    const [creditsRemaining, setCreditsRemaining] = useState(0)
     const [errorMsg, setErrorMsg] = useState<string | null>(null)
-    const [paymentMethod, setPaymentMethod] = useState<'online' | 'in-person' | null>(null)
-    const [payInPersonLoading, setPayInPersonLoading] = useState(false)
 
     useEffect(() => {
         if (!loading && lessons.length > 0 && instructors.length > 0) {
@@ -76,19 +79,24 @@ function BookingPage() {
             }
         }
     }, [loading, lessons, instructors, searchParams])
-    const [packageExpiry, setPackageExpiry] = useState<string | null>(null)
-    const [isBookingWithCredit, setIsBookingWithCredit] = useState(false)
     const [bufferMins, setBufferMins] = useState(30)
 
     useEffect(() => {
         fetchData()
     }, [])
 
+    // Pre-select hire from URL param once hires data is loaded
     useEffect(() => {
-        if (!user) return
-        setCreditsRemaining(user.credits_remaining || 0)
-        setPackageExpiry(user.package_expiry ?? null)
-    }, [user])
+        if (hires.length === 0) return
+        const hireId = searchParams.get('hireId')
+        if (hireId) {
+            const hire = hires.find((h: any) => h.id === hireId)
+            if (hire) {
+                setSelectedHire(hire)
+                setBookingMode('hire')
+            }
+        }
+    }, [hires, searchParams])
 
     const fetchData = async () => {
         setLoading(true)
@@ -100,6 +108,14 @@ function BookingPage() {
                 .eq('is_active', true)
 
             if (lessonsData) setLessons(lessonsData)
+
+            // Fetch Vehicle Hires
+            const { data: hiresData } = await supabase
+                .from('vehicle_hires')
+                .select('*')
+                .eq('is_active', true)
+                .order('price', { ascending: true })
+            if (hiresData) setHires(hiresData)
 
             // Fetch Instructors from instructors table
             const { data: instructorsData, error: instError } = await supabase
@@ -152,15 +168,42 @@ function BookingPage() {
         }
     }
 
+    const fetchHireBookings = async (hireId: string) => {
+        setAvailabilityLoading(true)
+        setHireBookings([])
+        try {
+            const { data } = await supabase
+                .from('bookings')
+                .select('id, start_time, end_time')
+                .eq('hire_id', hireId)
+                .eq('status', 'scheduled')
+            if (data) {
+                setHireBookings(data.map((b: any) => ({
+                    id: b.id,
+                    start: b.start_time,
+                    end: b.end_time,
+                    title: 'Vehicle Booked',
+                    backgroundColor: '#ef4444',
+                    borderColor: '#dc2626',
+                    editable: false,
+                })))
+            }
+        } catch (err) {
+            console.error('Error fetching hire bookings:', err)
+        } finally {
+            setAvailabilityLoading(false)
+        }
+    }
+
     const handleNext = () => {
         if (currentStep === 2) {
-            // Just advance to step 3 — booking is created there after details are collected
             setCurrentStep(3)
             return
         }
-        if (currentStep === 0 && instructors.length === 1) {
-            setSelectedInstructor(instructors[0])
-            fetchInstructorAvailability(instructors[0].id)
+        // Hire without instructor — skip step 1
+        if (currentStep === 0 && bookingMode === 'hire' && !needsInstructor) {
+            setSelectedInstructor(null)
+            setInstructorAvailability([])
             setCurrentStep(2)
             return
         }
@@ -191,13 +234,13 @@ function BookingPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    lessonId: selectedLesson.id,
+                    lessonId: bookingMode === 'lesson' ? selectedLesson?.id : null,
+                    hireId: bookingMode === 'hire' ? selectedHire?.id : null,
                     studentId: user?.id,
-                    instructorId: selectedInstructor.id,
+                    instructorId: selectedInstructor?.id || null,
+                    needsInstructor: bookingMode === 'hire' ? needsInstructor : false,
                     slots,
                     pickupAddress,
-                    vehicleType,
-                    transmissionType: vehicleType === 'truck' ? null : transmissionType,
                 }),
             })
             const data = await response.json()
@@ -206,6 +249,7 @@ function BookingPage() {
                 setIsBookingComplete(true)
             } else if (data.clientSecret) {
                 setClientSecret(data.clientSecret)
+                setPendingBookingIds(data.bookingIds)
             } else {
                 throw new Error(data.error || 'Payment setup failed')
             }
@@ -216,41 +260,14 @@ function BookingPage() {
         }
     }
 
-    const handlePayInPerson = async () => {
-        if (!user) { window.location.href = '/signup?redirect=/book'; return }
-        if (!pickupAddress.trim()) { setErrorMsg('Please enter your pickup address.'); return }
-        setPayInPersonLoading(true)
-        setErrorMsg(null)
-        try {
-            const slots = selectedSlots.map(slot => ({
-                start_time: slot.startStr,
-                end_time: slot.endStr,
-            }))
-            const res = await fetch('/api/create-payment-intent', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    lessonId: selectedLesson.id,
-                    studentId: user?.id,
-                    instructorId: selectedInstructor.id,
-                    slots,
-                    pickupAddress,
-                    vehicleType,
-                    transmissionType: vehicleType === 'truck' ? null : transmissionType,
-                    paymentMethod: 'in-person',
-                }),
-            })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.error || 'Booking failed')
-            setIsBookingComplete(true)
-        } catch (err: any) {
-            setErrorMsg('Booking failed: ' + err.message)
-        } finally {
-            setPayInPersonLoading(false)
+    const handleBack = () => {
+        // Hire without instructor skipped step 1, so going back from step 2 returns to step 0
+        if (currentStep === 2 && bookingMode === 'hire' && !needsInstructor) {
+            setCurrentStep(0)
+            return
         }
+        setCurrentStep(prev => Math.max(prev - 1, 0))
     }
-
-    const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 0))
 
     const handleDateClick = (info: any) => {
         if (info.allDay) return
@@ -258,7 +275,9 @@ function BookingPage() {
         const isPackageLessonType = selectedLesson?.is_package === true
         const perSessionMins = isPackageLessonType
             ? Math.floor(selectedLesson.duration_minutes / selectedLesson.lesson_count)
-            : (selectedLesson?.duration_minutes || 60)
+            : bookingMode === 'hire'
+                ? (selectedHire?.duration_minutes || 60)
+                : (selectedLesson?.duration_minutes || 60)
         const durationMins = perSessionMins
 
         const slotStart = info.date
@@ -288,20 +307,29 @@ function BookingPage() {
             }
         }
 
-        // Conflict check — extend busy period by bufferMins for different-user bookings
-        const isConflict = instructorBookings.some(booking => {
-            if (booking.extendedProps?.isBuffer) return false // buffer slots are visual only; real check is below
-            const bStart = new Date(booking.start).getTime()
-            const isSameStudent = booking.extendedProps?.studentId === user?.id
-            // Same student: allow back-to-back; different student: add travel buffer
-            const effectiveEnd = isSameStudent
-                ? new Date(booking.end).getTime()
-                : new Date(booking.end).getTime() + bufferMins * 60 * 1000
-            return slotStart.getTime() < effectiveEnd && slotEnd.getTime() > bStart
-        })
+        // Conflict check
+        const isHireOnlyMode = bookingMode === 'hire' && !needsInstructor
+        const isConflict = isHireOnlyMode
+            ? hireBookings.some(booking => {
+                const bStart = new Date(booking.start).getTime()
+                const bEnd = new Date(booking.end).getTime()
+                return slotStart.getTime() < bEnd && slotEnd.getTime() > bStart
+            })
+            : instructorBookings.some(booking => {
+                if (booking.extendedProps?.isBuffer) return false
+                const bStart = new Date(booking.start).getTime()
+                const isSameStudent = booking.extendedProps?.studentId === user?.id
+                const effectiveEnd = isSameStudent
+                    ? new Date(booking.end).getTime()
+                    : new Date(booking.end).getTime() + bufferMins * 60 * 1000
+                return slotStart.getTime() < effectiveEnd && slotEnd.getTime() > bStart
+            })
 
         if (isConflict) {
-            setErrorMsg(`This slot is unavailable — a ${bufferMins}-min travel buffer is required between lessons. Please choose a later time.`)
+            setErrorMsg(isHireOnlyMode
+                ? 'This vehicle is already booked at this time. Please choose a different slot.'
+                : `This slot is unavailable — a ${bufferMins}-min travel buffer is required between lessons. Please choose a later time.`
+            )
             return
         }
 
@@ -311,21 +339,13 @@ function BookingPage() {
             return
         }
 
-        const isPackageLessonType2 = selectedLesson?.is_package === true
-        // Package lesson: exactly lesson_count slots; credit users: up to their remaining credits; else: 1
-        const maxSlots = isPackageLessonType2
+        const maxSlots = selectedLesson?.is_package === true
             ? selectedLesson.lesson_count
-            : creditsRemaining > 0
-                ? creditsRemaining
-                : 1
+            : 1
 
         const newSlots = [...selectedSlots]
         if (newSlots.length >= maxSlots) {
-            setErrorMsg(
-                isPackageLessonType2
-                    ? `You can only select ${maxSlots} slot(s) for this lesson.`
-                    : `You only have ${creditsRemaining} credit(s) remaining.`
-            )
+            setErrorMsg(`You can only select ${maxSlots} slot(s) for this lesson.`)
             return
         }
 
@@ -334,61 +354,17 @@ function BookingPage() {
         setErrorMsg(null)
     }
 
-    const handleBookWithCredit = async () => {
-        if (!user || creditsRemaining <= 0) return
-
-        setIsBookingWithCredit(true)
-        try {
-            const res = await fetch('/api/book-lesson', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    studentId: user.id,
-                    instructorId: selectedInstructor.id,
-                    lessonId: selectedLesson.id,
-                    slots: selectedSlots.map((s: any) => ({ start_time: s.startStr, end_time: s.endStr })),
-                    pickupAddress,
-                    transmissionType
-                })
-            })
-
-            const data = await res.json()
-            if (data.success) {
-                setIsBookingComplete(true)
-            } else {
-                alert(data.error || 'Failed to book lesson.')
-            }
-        } catch (err) {
-            console.error('Error booking with credit:', err)
-            alert('An unexpected error occurred.')
-        } finally {
-            setIsBookingWithCredit(false)
-        }
-    }
-
     const renderStepContent = () => {
         if (isBookingComplete) {
-            const isPaidOnline = paymentMethod === 'online'
             return (
                 <div className="max-w-md mx-auto text-center space-y-6 py-12 animate-in fade-in zoom-in-95">
-                    <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${isPaidOnline ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                    <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto bg-green-100 text-green-600">
                         <CheckCircle2 className="w-12 h-12" />
                     </div>
                     <div className="space-y-2">
-                        <h2 className="text-3xl font-bold">{isPaidOnline ? 'Booking Confirmed!' : 'Request Received!'}</h2>
-                        <p className="text-muted-foreground">
-                            {isPaidOnline
-                                ? 'Payment successful. You\'ll receive a confirmation email with your lesson details shortly.'
-                                : 'Your booking request has been received. Bayside Driving School will contact you to confirm your lesson. Payment is due on the day of your class.'}
-                        </p>
+                        <h2 className="text-3xl font-bold">Booking Confirmed!</h2>
+                        <p className="text-muted-foreground">Payment successful. You'll receive a confirmation email with your lesson details shortly.</p>
                     </div>
-                    {!isPaidOnline && (
-                        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-blue-700 text-left space-y-1">
-                            <p className="font-bold">What happens next?</p>
-                            <p>• We'll call or SMS you to confirm the booking</p>
-                            <p>• Pay ${selectedLesson?.price} directly to your instructor on the day</p>
-                        </div>
-                    )}
                     <div className="pt-4">
                         <Button onClick={() => window.location.href = '/dashboard'} className="rounded-xl w-full">Go to Dashboard</Button>
                     </div>
@@ -428,26 +404,108 @@ function BookingPage() {
         switch (currentStep) {
             case 0:
                 return (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
-                        {lessons.map(lesson => (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                        {/* Mode tabs */}
+                        <div className="flex gap-2 bg-muted p-1 rounded-2xl w-fit">
                             <button
-                                key={lesson.id}
-                                onClick={() => { setSelectedLesson(lesson); handleNext(); }}
-                                className={`p-8 rounded-[2rem] border-2 text-left transition-all space-y-4 ${selectedLesson?.id === lesson.id ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-border bg-card hover:border-accent/40'}`}
+                                onClick={() => { setBookingMode('lesson'); setSelectedHire(null); setNeedsInstructor(false) }}
+                                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${bookingMode === 'lesson' ? 'bg-white shadow text-accent' : 'text-muted-foreground hover:text-foreground'}`}
                             >
-                                <div className="bg-accent/10 w-12 h-12 rounded-xl flex items-center justify-center text-accent">
-                                    <Clock className="w-6 h-6" />
-                                </div>
-                                <div className="space-y-1">
-                                    <h3 className="text-xl font-bold">{lesson.title}</h3>
-                                    <p className="text-sm text-muted-foreground line-clamp-2">{lesson.description}</p>
-                                </div>
-                                <div className="pt-4 flex justify-between items-center">
-                                    <span className="text-2xl font-bold">${lesson.price}</span>
-                                    <span className="text-xs font-bold text-accent uppercase tracking-widest">{lesson.duration_minutes}m sesssion</span>
-                                </div>
+                                Book a Lesson
                             </button>
-                        ))}
+                            <button
+                                onClick={() => { setBookingMode('hire'); setSelectedLesson(null); setNeedsInstructor(false) }}
+                                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${bookingMode === 'hire' ? 'bg-white shadow text-accent' : 'text-muted-foreground hover:text-foreground'}`}
+                            >
+                                Hire a Vehicle for Test
+                            </button>
+                        </div>
+
+                        {bookingMode === 'lesson' && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {lessons.map(lesson => (
+                                    <button
+                                        key={lesson.id}
+                                        onClick={() => { setSelectedLesson(lesson); handleNext(); }}
+                                        className={`p-8 rounded-[2rem] border-2 text-left transition-all space-y-4 ${selectedLesson?.id === lesson.id ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-border bg-card hover:border-accent/40'}`}
+                                    >
+                                        <div className="bg-accent/10 w-12 h-12 rounded-xl flex items-center justify-center text-accent">
+                                            <Clock className="w-6 h-6" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <h3 className="text-xl font-bold">{lesson.title}</h3>
+                                            <p className="text-sm text-muted-foreground line-clamp-2">{lesson.description}</p>
+                                        </div>
+                                        <div className="pt-4 flex justify-between items-center">
+                                            <span className="text-2xl font-bold">${lesson.price}</span>
+                                            <span className="text-xs font-bold text-accent uppercase tracking-widest">{lesson.duration_minutes}m session</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {bookingMode === 'hire' && (
+                            <div className="space-y-6">
+                                {/* Only show hire cards if no hire was pre-selected from URL */}
+                                {!searchParams.get('hireId') && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {hires.length === 0 && (
+                                            <p className="text-muted-foreground text-sm col-span-3">No hire options available yet.</p>
+                                        )}
+                                        {hires.map(hire => (
+                                            <button
+                                                key={hire.id}
+                                                onClick={() => setSelectedHire(hire)}
+                                                className={`p-8 rounded-[2rem] border-2 text-left transition-all space-y-4 ${selectedHire?.id === hire.id ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-border bg-card hover:border-accent/40'}`}
+                                            >
+                                                <div className="bg-accent/10 w-12 h-12 rounded-xl flex items-center justify-center text-2xl">
+                                                    {hire.vehicle_type === 'truck' ? '🚛' : '🚗'}
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <h3 className="text-xl font-bold">{hire.title}</h3>
+                                                    <p className="text-sm text-muted-foreground line-clamp-2">{hire.description}</p>
+                                                </div>
+                                                <div className="pt-4 flex justify-between items-center">
+                                                    <span className="text-2xl font-bold">${hire.price}</span>
+                                                    <span className="text-xs font-bold text-accent uppercase tracking-widest">{hire.duration_minutes}m</span>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {selectedHire && (
+                                    <div className="bg-muted/50 border border-border rounded-2xl p-6 space-y-4 max-w-lg">
+                                        {searchParams.get('hireId') && (
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <span className="text-2xl">{selectedHire.vehicle_type === 'truck' ? '🚛' : '🚗'}</span>
+                                                <div>
+                                                    <p className="font-bold text-sm">{selectedHire.title}</p>
+                                                    <p className="text-xs text-muted-foreground">${selectedHire.price} · {selectedHire.duration_minutes} min</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <p className="font-bold">Do you need an instructor to accompany you?</p>
+                                        <p className="text-sm text-muted-foreground">Some students prefer an instructor present during their test for guidance.</p>
+                                        <div className="flex gap-3">
+                                            <button
+                                                onClick={() => { setNeedsInstructor(true); setCurrentStep(1); }}
+                                                className="flex-1 py-3 rounded-xl text-sm font-bold border-2 border-accent bg-accent text-white"
+                                            >
+                                                Yes, with instructor
+                                            </button>
+                                            <button
+                                                onClick={() => { setNeedsInstructor(false); setSelectedInstructor(null); setInstructorAvailability([]); fetchHireBookings(selectedHire.id); setCurrentStep(2); }}
+                                                className="flex-1 py-3 rounded-xl text-sm font-bold border-2 border-border bg-card hover:border-accent/50"
+                                            >
+                                                No, just the vehicle
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )
             case 1:
@@ -485,12 +543,12 @@ function BookingPage() {
                 )
             case 2: {
                 const isPackageLesson = selectedLesson?.is_package === true
-                const maxSlots = isPackageLesson
-                    ? selectedLesson.lesson_count
-                    : creditsRemaining > 0 ? creditsRemaining : 1
+                const maxSlots = isPackageLesson ? selectedLesson.lesson_count : 1
                 const perSessionMins2 = isPackageLesson
                     ? Math.floor(selectedLesson.duration_minutes / selectedLesson.lesson_count)
-                    : (selectedLesson?.duration_minutes || 60)
+                    : bookingMode === 'hire'
+                        ? (selectedHire?.duration_minutes || 60)
+                        : (selectedLesson?.duration_minutes || 60)
                 const selectedEvents = selectedSlots.map((s: any, i: number) => ({
                     start: s.startStr,
                     end: s.endStr,
@@ -504,7 +562,9 @@ function BookingPage() {
                     endTime: a.end_time.slice(0, 5),
                 }))
                 const allSlotsSelected = selectedSlots.length === maxSlots
-                const showTracker = isPackageLesson || (creditsRemaining > 0 && maxSlots > 1)
+                const showTracker = isPackageLesson
+
+                const isHireNoInstructor = bookingMode === 'hire' && !needsInstructor
 
                 const calendarBlock = (
                     <>
@@ -513,7 +573,7 @@ function BookingPage() {
                                 <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
                                 <span className="text-sm font-medium">Loading availability...</span>
                             </div>
-                        ) : instructorAvailability.length === 0 ? (
+                        ) : !isHireNoInstructor && instructorAvailability.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
                                 <div className="bg-amber-100 w-16 h-16 rounded-full flex items-center justify-center text-amber-600">
                                     <CalendarIcon className="w-8 h-8" />
@@ -526,24 +586,36 @@ function BookingPage() {
                             </div>
                         ) : (
                             <>
+                                {isHireNoInstructor && selectedHire && (
+                                    <div className="flex items-center gap-3 mb-4 p-3 bg-muted/50 border border-border rounded-xl">
+                                        <span className="text-2xl">{selectedHire.vehicle_type === 'truck' ? '🚛' : '🚗'}</span>
+                                        <div>
+                                            <p className="font-bold text-sm">{selectedHire.title}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {selectedHire.vehicle_type === 'truck' ? 'Heavy Vehicle' : 'Car'} · {selectedHire.duration_minutes} min · Red slots = already booked
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                                 <p className="text-xs text-muted-foreground mb-4">
                                     Click a start time to book a{' '}
                                     <span className="font-bold text-accent">{perSessionMins2}-min session</span>.
-                                    {' '}Available hours are highlighted.
+                                    {isHireNoInstructor ? ' Red blocks show times the vehicle is already booked.' : ' Available hours are highlighted.'}
                                 </p>
                                 <FullCalendar
                                     plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                                     initialView="timeGridWeek"
                                     headerToolbar={{ left: 'prev,next today', center: 'title', right: 'timeGridWeek,timeGridDay' }}
+                                    locale="en-AU"
                                     dayHeaderFormat={{ day: '2-digit', month: '2-digit', omitCommas: true }}
                                     titleFormat={{ day: '2-digit', month: '2-digit', year: 'numeric' }}
                                     allDaySlot={false}
-                                    slotMinTime="00:00:00"
-                                    slotMaxTime="24:00:00"
+                                    slotMinTime="07:00:00"
+                                    slotMaxTime="19:00:00"
                                     height="auto"
                                     dateClick={handleDateClick}
-                                    events={[...instructorBookings, ...selectedEvents]}
-                                    businessHours={businessHours}
+                                    events={isHireNoInstructor ? [...hireBookings, ...selectedEvents] : [...instructorBookings, ...selectedEvents]}
+                                    businessHours={isHireNoInstructor ? undefined : businessHours}
                                     eventContent={(arg) => {
                                         if (arg.event.extendedProps?.isBuffer) {
                                             return (
@@ -711,16 +783,20 @@ function BookingPage() {
                                 <div className="flex justify-between items-center p-4 bg-muted rounded-2xl">
                                     <div className="flex items-center gap-3">
                                         <div className="bg-white p-2 rounded-lg"><Clock className="w-4 h-4 text-accent" /></div>
-                                        <span className="font-medium">{selectedLesson?.title}</span>
+                                        <span className="font-medium">
+                                            {bookingMode === 'hire' ? selectedHire?.title : selectedLesson?.title}
+                                        </span>
                                     </div>
-                                    <span className="font-bold">${selectedLesson?.price}</span>
+                                    <span className="font-bold">${bookingMode === 'hire' ? selectedHire?.price : selectedLesson?.price}</span>
                                 </div>
-                                <div className="flex justify-between items-center p-4 bg-muted rounded-2xl">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-white p-2 rounded-lg"><User className="w-4 h-4 text-accent" /></div>
-                                        <span className="font-medium">Instructor: {selectedInstructor?.full_name}</span>
+                                {selectedInstructor && (
+                                    <div className="flex justify-between items-center p-4 bg-muted rounded-2xl">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-white p-2 rounded-lg"><User className="w-4 h-4 text-accent" /></div>
+                                            <span className="font-medium">Instructor: {selectedInstructor?.full_name}</span>
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                                 {selectedSlots.map((slot: any, i: number) => (
                                     <div key={i} className="flex justify-between items-center p-4 bg-muted rounded-2xl">
                                         <div className="flex items-center gap-3">
@@ -746,174 +822,60 @@ function BookingPage() {
 
                             <div className="space-y-4">
                                 <h3 className="font-bold text-lg font-outfit">Additional Details</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Pickup Address</label>
-                                        <input
-                                            type="text"
-                                            required
-                                            value={pickupAddress}
-                                            onChange={(e) => setPickupAddress(e.target.value)}
-                                            placeholder="Enter your pickup location"
-                                            className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-accent/20 transition-all text-sm"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Vehicle Type</label>
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => setVehicleType('car')}
-                                                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all border ${vehicleType === 'car' ? 'bg-accent text-white border-accent shadow-lg shadow-accent/20' : 'bg-muted text-muted-foreground border-border'}`}
-                                            >
-                                                🚗 Car
-                                            </button>
-                                            <button
-                                                onClick={() => { setVehicleType('truck'); setTransmissionType('auto') }}
-                                                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all border ${vehicleType === 'truck' ? 'bg-accent text-white border-accent shadow-lg shadow-accent/20' : 'bg-muted text-muted-foreground border-border'}`}
-                                            >
-                                                🚛 Truck
-                                            </button>
-                                        </div>
-                                    </div>
-                                    {vehicleType === 'car' && (
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Transmission</label>
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => setTransmissionType('auto')}
-                                                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all border ${transmissionType === 'auto' ? 'bg-accent text-white border-accent shadow-lg shadow-accent/20' : 'bg-muted text-muted-foreground border-border'}`}
-                                            >
-                                                Automatic
-                                            </button>
-                                            <button
-                                                onClick={() => setTransmissionType('manual')}
-                                                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all border ${transmissionType === 'manual' ? 'bg-accent text-white border-accent shadow-lg shadow-accent/20' : 'bg-muted text-muted-foreground border-border'}`}
-                                            >
-                                                Manual
-                                            </button>
-                                        </div>
-                                    </div>
-                                    )}
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Pickup Address</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={pickupAddress}
+                                        onChange={(e) => setPickupAddress(e.target.value)}
+                                        placeholder="Enter your pickup location"
+                                        className="w-full bg-muted border border-border rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-accent/20 transition-all text-sm"
+                                    />
                                 </div>
                             </div>
                         </div>
 
                         <div className="pt-8 border-t border-border space-y-6 relative">
-                            {creditsRemaining > 0 ? (
-                                <div className="space-y-6">
-                                    {packageExpiry && new Date() > new Date(packageExpiry) ? (
-                                        <div className="bg-red-50 border border-red-200 p-6 rounded-2xl flex items-center gap-3 text-red-600">
-                                            <AlertCircle className="w-5 h-5 shrink-0" />
-                                            <div>
-                                                <p className="font-bold text-sm">Package Expired</p>
-                                                <p className="text-xs">Your credits expired on {new Date(packageExpiry).toLocaleDateString()}. Please purchase a new pack.</p>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div className="bg-accent/5 border border-accent/20 p-6 rounded-2xl space-y-4">
-                                                <div className="flex justify-between items-center text-sm">
-                                                    <span className="text-muted-foreground">Available Credits</span>
-                                                    <span className="font-bold text-accent">{creditsRemaining} Lessons</span>
-                                                </div>
-                                                {packageExpiry && (
-                                                    <div className="flex justify-between items-center text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
-                                                        <span>Package Expires</span>
-                                                        <span>{new Date(packageExpiry).toLocaleDateString()}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <Button
-                                                onClick={handleBookWithCredit}
-                                                isLoading={isBookingWithCredit}
-                                                size="lg"
-                                                className="w-full h-16 rounded-2xl text-xl gap-2 shadow-xl shadow-accent/20"
-                                            >
-                                                <span>Use {selectedSlots.length} Credit{selectedSlots.length !== 1 ? 's' : ''} to Book {selectedSlots.length} Lesson{selectedSlots.length !== 1 ? 's' : ''}</span>
-                                                <CheckCircle2 className="w-6 h-6" />
-                                            </Button>
-                                            <p className="text-center text-xs text-muted-foreground">
-                                                {selectedSlots.length} credit{selectedSlots.length !== 1 ? 's' : ''} will be deducted. You'll have {creditsRemaining - selectedSlots.length} remaining.
-                                            </p>
-                                        </>
-                                    )}
+                            {errorMsg && (
+                                <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-red-600">
+                                    <AlertCircle className="w-5 h-5 shrink-0" />
+                                    <p className="text-sm font-bold">{errorMsg}</p>
                                 </div>
-                            ) : (
+                            )}
+                            {loading ? (
+                                <div className="flex justify-center p-8">
+                                    <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+                                </div>
+                            ) : clientSecret ? (
                                 <>
-                                    {errorMsg && (
-                                        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-red-600">
-                                            <AlertCircle className="w-5 h-5 shrink-0" />
-                                            <p className="text-sm font-bold">{errorMsg}</p>
-                                        </div>
-                                    )}
-
-                                    {loading || payInPersonLoading ? (
-                                        <div className="flex justify-center p-8">
-                                            <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
-                                        </div>
-                                    ) : clientSecret ? (
-                                        <>
-                                            <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                                                <CreditCard className="w-4 h-4" /> Secure payment with Stripe
-                                            </div>
-                                            <Elements stripe={stripePromise} options={{ clientSecret }}>
-                                                <CheckoutForm amount={selectedLesson.price} onSuccess={() => setIsBookingComplete(true)} />
-                                            </Elements>
-                                        </>
-                                    ) : (
-                                        <div className="space-y-4">
-                                            <h3 className="font-bold text-lg font-outfit">How would you like to pay?</h3>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                <button
-                                                    onClick={() => setPaymentMethod('online')}
-                                                    className={`p-6 rounded-2xl border-2 text-left transition-all space-y-3 ${paymentMethod === 'online' ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-border bg-muted/30 hover:border-accent/40'}`}
-                                                >
-                                                    <div className="bg-accent/10 w-10 h-10 rounded-xl flex items-center justify-center text-accent">
-                                                        <CreditCard className="w-5 h-5" />
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-bold">Pay Online</p>
-                                                        <p className="text-xs text-muted-foreground mt-1">Secure card payment via Stripe. Booking confirmed instantly.</p>
-                                                    </div>
-                                                    <p className="text-xl font-bold text-accent">${selectedLesson?.price}</p>
-                                                </button>
-                                                <button
-                                                    onClick={() => setPaymentMethod('in-person')}
-                                                    className={`p-6 rounded-2xl border-2 text-left transition-all space-y-3 ${paymentMethod === 'in-person' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border bg-muted/30 hover:border-primary/40'}`}
-                                                >
-                                                    <div className="bg-primary/10 w-10 h-10 rounded-xl flex items-center justify-center text-primary">
-                                                        <ShieldCheck className="w-5 h-5" />
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-bold">Pay During Class</p>
-                                                        <p className="text-xs text-muted-foreground mt-1">Pay your instructor on the day. We'll confirm your booking by phone.</p>
-                                                    </div>
-                                                    <p className="text-xs font-bold text-primary uppercase tracking-wider">No upfront payment</p>
-                                                </button>
-                                            </div>
-
-                                            {paymentMethod === 'online' && (
-                                                <Button
-                                                    onClick={handleConfirmBooking}
-                                                    size="lg"
-                                                    className="w-full h-14 rounded-2xl gap-2 shadow-xl shadow-accent/20"
-                                                >
-                                                    Pay ${selectedLesson?.price} with Stripe <CreditCard className="w-5 h-5" />
-                                                </Button>
-                                            )}
-                                            {paymentMethod === 'in-person' && (
-                                                <Button
-                                                    onClick={handlePayInPerson}
-                                                    size="lg"
-                                                    variant="outline"
-                                                    className="w-full h-14 rounded-2xl gap-2 border-primary text-primary hover:bg-primary/5"
-                                                >
-                                                    Confirm Booking — Pay on the Day <CheckCircle2 className="w-5 h-5" />
-                                                </Button>
-                                            )}
-                                        </div>
-                                    )}
+                                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                        <CreditCard className="w-4 h-4" /> Secure payment with Stripe
+                                    </div>
+                                    <Elements stripe={stripePromise} options={{ clientSecret }}>
+                                        <CheckoutForm
+                                            amount={bookingMode === 'hire' ? selectedHire?.price : selectedLesson?.price}
+                                            onSuccess={async () => {
+                                                if (pendingBookingIds) {
+                                                    fetch('/api/booking/notify', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ bookingIds: pendingBookingIds }),
+                                                    }).catch(() => {})
+                                                }
+                                                setIsBookingComplete(true)
+                                            }}
+                                        />
+                                    </Elements>
                                 </>
+                            ) : (
+                                <Button
+                                    onClick={handleConfirmBooking}
+                                    size="lg"
+                                    className="w-full h-14 rounded-2xl gap-2 shadow-xl shadow-accent/20"
+                                >
+                                    Pay ${bookingMode === 'hire' ? selectedHire?.price : selectedLesson?.price} with Stripe <CreditCard className="w-5 h-5" />
+                                </Button>
                             )}
                         </div>
                     </div>
@@ -924,6 +886,36 @@ function BookingPage() {
     }
 
     if (authLoading) return null
+
+    if (!user) {
+        return (
+            <div className="min-h-[70vh] flex items-center justify-center p-4">
+                <div className="max-w-md w-full bg-card border border-border p-10 rounded-[2.5rem] shadow-xl text-center space-y-6">
+                    <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto">
+                        <User className="w-8 h-8 text-accent" />
+                    </div>
+                    <div className="space-y-2">
+                        <h2 className="text-2xl font-bold font-outfit">Sign in to Book</h2>
+                        <p className="text-muted-foreground text-sm leading-relaxed">
+                            You need an account to book a lesson. Sign up for free — it only takes a minute!
+                        </p>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                        <a href={`/signup?redirect=${encodeURIComponent('/book' + (typeof window !== 'undefined' ? window.location.search : ''))}`}>
+                            <Button size="lg" className="w-full rounded-xl gap-2">
+                                Create Account <UserPlus className="w-4 h-4" />
+                            </Button>
+                        </a>
+                        <a href={`/signin?redirect=${encodeURIComponent('/book' + (typeof window !== 'undefined' ? window.location.search : ''))}`}>
+                            <Button size="lg" variant="outline" className="w-full rounded-xl gap-2">
+                                Sign In
+                            </Button>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="max-w-7xl mx-auto px-4 py-20 space-y-12 min-h-screen">

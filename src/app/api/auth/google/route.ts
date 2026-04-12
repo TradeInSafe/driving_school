@@ -12,8 +12,6 @@ export async function GET(request: NextRequest) {
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || `${request.nextUrl.protocol}//${request.nextUrl.host}`
 
-    console.log('[Google OAuth] client_id present:', !!process.env.GOOGLE_CLIENT_ID, '| redirect_uri:', `${appUrl}/api/auth/google/callback`)
-
     const googleAuthUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
     googleAuthUrl.searchParams.set('client_id', process.env.GOOGLE_CLIENT_ID!)
     googleAuthUrl.searchParams.set('redirect_uri', `${appUrl}/api/auth/google/callback`)

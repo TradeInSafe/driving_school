@@ -2,7 +2,7 @@ import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabase, getServiceRoleClient } from '@/lib/supabase'
-import { sendPackagePurchaseEmail, sendBookingConfirmationEmail } from '@/lib/email'
+import { sendBookingConfirmationEmail } from '@/lib/email'
 import { addGoogleCalendarEvent } from '@/lib/calendar'
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET as string
@@ -30,59 +30,11 @@ export async function POST(req: Request) {
     switch (event.type) {
         case 'payment_intent.succeeded':
             const paymentIntent = event.data.object as Stripe.PaymentIntent
-            const { bookingId, bookingIds, studentId, isPackage, creditsAdded, packageId } = paymentIntent.metadata
+            const { bookingId, bookingIds } = paymentIntent.metadata
 
             const adminClient = getServiceRoleClient()
 
-            if (isPackage === 'true' && studentId) {
-                // 1. Update Profile Credits & Expiry (90 days)
-                const expiryDate = new Date()
-                expiryDate.setDate(expiryDate.getDate() + 90)
-
-                const { error: profileError } = await adminClient.rpc('increment_student_credits', {
-                    p_student_id: studentId,
-                    p_credits: parseInt(creditsAdded),
-                    p_expiry: expiryDate.toISOString()
-                })
-
-                if (profileError) {
-                    console.error('Error incrementing credits:', profileError.message)
-                }
-
-                // 2. Log Package Purchase
-                const { error: purchaseError } = await adminClient
-                    .from('package_purchases')
-                    .insert({
-                        student_id: studentId,
-                        package_type: creditsAdded === '5' ? '5-pack' : '10-pack',
-                        amount: paymentIntent.amount / 100,
-                        credits_added: parseInt(creditsAdded)
-                    })
-
-                if (purchaseError) {
-                    console.error('Error logging purchase:', purchaseError.message)
-                } else {
-                    try {
-                        const { data: studentUser } = await adminClient
-                            .from('users')
-                            .select('email, full_name')
-                            .eq('id', studentId)
-                            .single()
-
-                        if (studentUser?.email) {
-                            await sendPackagePurchaseEmail({
-                                studentEmail: studentUser.email,
-                                studentName: studentUser.full_name || 'Student',
-                                packageName: `${creditsAdded}-pack`,
-                                amount: paymentIntent.amount / 100,
-                                creditsAdded: parseInt(creditsAdded)
-                            })
-                        }
-                    } catch (e) {
-                        console.error('Failed to send package receipt email:', e)
-                    }
-                }
-            } else if (bookingIds || bookingId) {
+            if (bookingIds || bookingId) {
                 // Update booking status for individual lessons (or multiple if package booked at once)
                 const idsArray = bookingIds ? bookingIds.split(',') : [bookingId];
                 
@@ -91,25 +43,32 @@ export async function POST(req: Request) {
                     .update({ payment_status: 'paid' })
                     .in('id', idsArray)
                     .select(`
-                        id, start_time, end_time, pickup_address, transmission_type, student_id, instructor_id, lesson_id,
+                        id, start_time, end_time, pickup_address, student_id, instructor_id, lesson_id, hire_id,
                         student:users!bookings_student_id_fkey(full_name, email)
                     `)
 
                 if (error) {
                     console.error('Error updating booking status:', error.message)
                 } else if (bookings && bookings.length > 0) {
-                    // Send confirmation for the FIRST booking as a representative email, 
-                    // or ideally loop over them. For now we just use the first booking data
-                    // with a note about multiple sessions if length > 1
                     const firstBooking = bookings[0];
                     try {
-                        const [
-                            { data: instructorProfile },
-                            { data: lesson }
-                        ] = await Promise.all([
-                            adminClient.from('instructors').select('full_name, email').eq('id', firstBooking.instructor_id).single(),
-                            adminClient.from('lessons').select('title').eq('id', firstBooking.lesson_id).single()
+                        // Fetch instructor and lesson/hire in parallel (both may be null for hire-only bookings)
+                        const [instructorResult, lessonResult, hireResult] = await Promise.all([
+                            firstBooking.instructor_id
+                                ? adminClient.from('instructors').select('full_name, email').eq('id', firstBooking.instructor_id).single()
+                                : Promise.resolve({ data: null }),
+                            firstBooking.lesson_id
+                                ? adminClient.from('lessons').select('title').eq('id', firstBooking.lesson_id).single()
+                                : Promise.resolve({ data: null }),
+                            (firstBooking as any).hire_id
+                                ? adminClient.from('vehicle_hires').select('title').eq('id', (firstBooking as any).hire_id).single()
+                                : Promise.resolve({ data: null }),
                         ])
+
+                        const instructorProfile = instructorResult.data
+                        const lesson = lessonResult.data
+                        const hire = hireResult.data
+                        const bookingTitle = lesson?.title || hire?.title || 'Driving Lesson'
 
                         const studentData = Array.isArray(firstBooking.student)
                             ? firstBooking.student[0]
@@ -123,10 +82,10 @@ export async function POST(req: Request) {
                                 studentName,
                                 instructorEmail: instructorProfile?.email,
                                 instructorName: instructorProfile?.full_name,
-                                lessonTitle: (lesson?.title || 'Driving Lesson') + (bookings.length > 1 ? ` (1 of ${bookings.length})` : ''),
+                                lessonTitle: bookingTitle + (bookings.length > 1 ? ` (1 of ${bookings.length})` : ''),
                                 startTime: firstBooking.start_time,
                                 pickupAddress: firstBooking.pickup_address,
-                                transmissionType: firstBooking.transmission_type
+                                transmissionType: '',
                             })
 
                             // Bulk Google Calendar Sync
@@ -137,12 +96,12 @@ export async function POST(req: Request) {
                                     studentName,
                                     studentEmail,
                                     pickupAddress: b.pickup_address,
-                                    lessonTitle: lesson?.title || 'Driving Lesson'
+                                    lessonTitle: bookingTitle,
                                 });
                             }
                         }
                     } catch (e) {
-                        console.error('Failed to send single booking confirmation email:', e)
+                        console.error('Failed to send booking confirmation email:', e)
                     }
                 }
             }
