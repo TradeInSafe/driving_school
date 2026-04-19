@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/adminAuth'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { syncBookingToCalendar } from '@/lib/calendar'
 
 export async function POST(request: NextRequest) {
     if (!verifyAdminSession(request)) {
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        const { error: bookingError } = await db.from('bookings').insert({
+        const { data: newHireBooking, error: bookingError } = await db.from('bookings').insert({
             student_id: resolvedStudentId,
             hire_id: hireId,
             start_time: startTime.toISOString(),
@@ -81,9 +82,11 @@ export async function POST(request: NextRequest) {
             pickup_address: pickupAddress || 'Admin booking',
             vehicle_type: hire.vehicle_type,
             needs_instructor: false,
-        })
+        }).select('id').single()
 
         if (bookingError) return NextResponse.json({ error: bookingError.message }, { status: 500 })
+        // Sync to Google Calendar (non-blocking — failure won't affect the response)
+        if (newHireBooking?.id) syncBookingToCalendar(newHireBooking.id).catch(() => {})
         return NextResponse.json({ success: true }, { status: 201 })
     }
 
@@ -114,7 +117,7 @@ export async function POST(request: NextRequest) {
         )
     }
 
-    const { error: bookingError } = await db.from('bookings').insert({
+    const { data: newBooking, error: bookingError } = await db.from('bookings').insert({
         student_id: resolvedStudentId,
         instructor_id: instructorId,
         lesson_id: lessonId,
@@ -125,9 +128,11 @@ export async function POST(request: NextRequest) {
         pickup_address: pickupAddress || 'Admin booking',
         vehicle_type: vehicleType || 'car',
         transmission_type: vehicleType === 'truck' ? null : (transmission || 'auto'),
-    })
+    }).select('id').single()
 
     if (bookingError) return NextResponse.json({ error: bookingError.message }, { status: 500 })
+    // Sync to Google Calendar (non-blocking — failure won't affect the response)
+    if (newBooking?.id) syncBookingToCalendar(newBooking.id).catch(() => {})
 
     return NextResponse.json({ success: true }, { status: 201 })
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { sendBookingConfirmationEmail } from '@/lib/email'
+import { syncBookingToCalendar } from '@/lib/calendar'
 
 export async function POST(request: NextRequest) {
     try {
@@ -50,6 +51,11 @@ export async function POST(request: NextRequest) {
                 pickupAddress: first.pickup_address,
                 transmissionType: '',
             })
+        }
+
+        // Sync all bookings in this batch to Google Calendar
+        for (const id of ids) {
+            await syncBookingToCalendar(id)
         }
 
         return NextResponse.json({ ok: true })

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabase, getServiceRoleClient } from '@/lib/supabase'
 import { sendBookingConfirmationEmail } from '@/lib/email'
-import { addGoogleCalendarEvent } from '@/lib/calendar'
+import { syncBookingToCalendar } from '@/lib/calendar'
 
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET as string
 
@@ -88,16 +88,9 @@ export async function POST(req: Request) {
                                 transmissionType: '',
                             })
 
-                            // Bulk Google Calendar Sync
+                            // Sync each booking to Google Calendar (creates/updates event and saves event ID)
                             for (const b of bookings) {
-                                await addGoogleCalendarEvent({
-                                    startTime: b.start_time,
-                                    endTime: b.end_time || (new Date(new Date(b.start_time).getTime() + 60 * 60 * 1000).toISOString()),
-                                    studentName,
-                                    studentEmail,
-                                    pickupAddress: b.pickup_address,
-                                    lessonTitle: bookingTitle,
-                                });
+                                await syncBookingToCalendar(b.id);
                             }
                         }
                     } catch (e) {

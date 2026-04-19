@@ -157,6 +157,7 @@ export default function AdminDashboard() {
     const [blockedSlotForm, setBlockedSlotForm] = useState({ date: '', start_time: '12:00', end_time: '13:00' })
     const [bulkAvailLoading, setBulkAvailLoading] = useState(false)
     const [instructorAvailability, setInstructorAvailability] = useState<any[]>([])
+    const [calendarTooltip, setCalendarTooltip] = useState<{ props: any; x: number; y: number } | null>(null)
     const [availabilityLoading, setAvailabilityLoading] = useState(false)
     const [newSlot, setNewSlot] = useState({ day_of_week: '1', start_time: '09:00', end_time: '17:00' })
     const [addingSlotDay, setAddingSlotDay] = useState<number | null>(null)
@@ -184,6 +185,8 @@ export default function AdminDashboard() {
     const [hireBookingNewStudent, setHireBookingNewStudent] = useState({ full_name: '', email: '', phone: '', address: '' })
     const [hireBookingError, setHireBookingError] = useState<string | null>(null)
     const [hireBookingLoading, setHireBookingLoading] = useState(false)
+    const [showPastBookings, setShowPastBookings] = useState(false)
+    const [showPastHireBookings, setShowPastHireBookings] = useState(false)
     const [editingBooking, setEditingBooking] = useState<any | null>(null)
     const [bookingEditForm, setBookingEditForm] = useState({
         instructorId: '', lessonId: '', date: '', time: '',
@@ -927,6 +930,60 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
 
     return (
         <div className="min-h-screen flex bg-muted/30">
+            {/* ── Calendar booking tooltip (fixed overlay, escapes all stacking contexts) ── */}
+            {calendarTooltip && (
+                <div
+                    className="pointer-events-none fixed z-[99999] w-60"
+                    style={{ left: calendarTooltip.x, top: calendarTooltip.y }}
+                >
+                    <div className="bg-gray-900 text-white text-xs rounded-lg shadow-2xl p-3 space-y-1.5 border border-white/10">
+                        <div className="font-bold text-sm border-b border-white/20 pb-1.5">{calendarTooltip.props.student}</div>
+                        {calendarTooltip.props.timeRange && (
+                            <div className="flex gap-2">
+                                <span className="text-white/60 shrink-0 w-14">Time</span>
+                                <span className="font-medium">{calendarTooltip.props.timeRange}</span>
+                            </div>
+                        )}
+                        {calendarTooltip.props.lesson && (
+                            <div className="flex gap-2">
+                                <span className="text-white/60 shrink-0 w-14">Lesson</span>
+                                <span className="font-medium">{calendarTooltip.props.lesson}</span>
+                            </div>
+                        )}
+                        {(() => {
+                            const p = calendarTooltip.props
+                            const vehicleLabel = p.vehicleType
+                                ? `${p.vehicleType.charAt(0).toUpperCase() + p.vehicleType.slice(1)}${p.transmissionType ? ` · ${p.transmissionType.charAt(0).toUpperCase() + p.transmissionType.slice(1)}` : ''}`
+                                : null
+                            return vehicleLabel ? (
+                                <div className="flex gap-2">
+                                    <span className="text-white/60 shrink-0 w-14">Vehicle</span>
+                                    <span className="font-medium">{vehicleLabel}</span>
+                                </div>
+                            ) : null
+                        })()}
+                        {calendarTooltip.props.pickupAddress && (
+                            <div className="flex gap-2">
+                                <span className="text-white/60 shrink-0 w-14">Pickup</span>
+                                <span className="font-medium break-words">{calendarTooltip.props.pickupAddress}</span>
+                            </div>
+                        )}
+                        {calendarTooltip.props.studentPhone && (
+                            <div className="flex gap-2">
+                                <span className="text-white/60 shrink-0 w-14">Phone</span>
+                                <span className="font-medium">{calendarTooltip.props.studentPhone}</span>
+                            </div>
+                        )}
+                        <div className="flex gap-2 pt-0.5 border-t border-white/20">
+                            <span className="text-white/60 shrink-0 w-14">Payment</span>
+                            <span className={`font-semibold ${calendarTooltip.props.payment === 'paid' ? 'text-green-400' : 'text-yellow-400'}`}>
+                                {calendarTooltip.props.payment === 'paid' ? '✓ Paid' : '⏳ Pending'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ── Sidebar ─────────────────────────────────────────────── */}
             <aside className="w-56 shrink-0 bg-card border-r border-border flex flex-col h-screen sticky top-0">
                 {/* Logo */}
@@ -1395,7 +1452,16 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                         <>
                             <div className="flex justify-between items-center text-sm">
                                 <h2 className="text-2xl font-bold font-outfit">All Bookings</h2>
-                                <div className="flex gap-4">
+                                <div className="flex items-center gap-3">
+                                    <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={showPastBookings}
+                                            onChange={e => setShowPastBookings(e.target.checked)}
+                                            className="rounded"
+                                        />
+                                        Show past bookings
+                                    </label>
                                     <Button size="sm" variant="outline" className="rounded-xl gap-2" onClick={() => fetchAdminData()}>
                                         Refresh
                                     </Button>
@@ -1413,12 +1479,19 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                             <th className="px-6 py-5">Instructor</th>
                                             <th className="px-6 py-5">Lesson</th>
                                             <th className="px-6 py-5">Date & Time</th>
+                                            <th className="px-6 py-5">Booked On</th>
                                             <th className="px-6 py-5">Status</th>
                                             <th className="px-6 py-5 text-right">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border/50">
-                                        {allBookings.map(b => {
+                                        {(() => {
+                                            const now = new Date()
+                                            return allBookings
+                                                .filter((b: any) => !b.hire_id)
+                                                .filter((b: any) => showPastBookings || new Date(b.start_time) >= now)
+                                                .sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+                                        })().map(b => {
                                             const student = allUsers.find((u: any) => u.id === b.student_id);
                                             const instructor = instructors.find((inst: any) => inst.id === b.instructor_id);
                                             const lesson = lessons.find((l: any) => l.id === b.lesson_id);
@@ -1448,8 +1521,16 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                     )}
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <p className="text-sm">{new Date(b.start_time).toLocaleDateString()}</p>
-                                                    <p className="text-xs text-muted-foreground">{new Date(b.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                    <p className="text-sm">{new Date(b.start_time).toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                                    <p className="text-xs text-muted-foreground">{new Date(b.start_time).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })} – {new Date(b.end_time).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })}</p>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {b.created_at ? (
+                                                        <>
+                                                            <p className="text-sm">{new Date(b.created_at).toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                                            <p className="text-xs text-muted-foreground">{new Date(b.created_at).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })}</p>
+                                                        </>
+                                                    ) : <span className="text-xs text-muted-foreground">—</span>}
                                                 </td>
                                                 <td className="px-6 py-4 space-y-1">
                                                     <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold uppercase ${b.status === 'scheduled' ? 'bg-blue-100 text-blue-700' :
@@ -1493,7 +1574,16 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                     <h2 className="text-2xl font-bold font-outfit">Vehicle Hire Bookings</h2>
                                     <p className="text-muted-foreground text-sm mt-1">Bookings where a student has hired a vehicle for their test.</p>
                                 </div>
-                                <div className="flex gap-3">
+                                <div className="flex items-center gap-3">
+                                    <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={showPastHireBookings}
+                                            onChange={e => setShowPastHireBookings(e.target.checked)}
+                                            className="rounded"
+                                        />
+                                        Show past bookings
+                                    </label>
                                     <Button size="sm" variant="outline" className="rounded-xl gap-2" onClick={() => fetchAdminData()}>
                                         Refresh
                                     </Button>
@@ -1637,16 +1727,31 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                             <th className="px-6 py-5">Student</th>
                                             <th className="px-6 py-5">Vehicle Option</th>
                                             <th className="px-6 py-5">Date & Time</th>
+                                            <th className="px-6 py-5">Booked On</th>
                                             <th className="px-6 py-5">Pickup Address</th>
                                             <th className="px-6 py-5">Status</th>
                                             <th className="px-6 py-5 text-right">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border/50">
-                                        {allBookings.filter((b: any) => b.hire_id).length === 0 && (
-                                            <tr><td colSpan={6} className="px-6 py-10 text-center text-sm text-muted-foreground">No vehicle hire bookings yet.</td></tr>
+                                        {(() => {
+                                            const now = new Date()
+                                            return allBookings
+                                                .filter((b: any) => b.hire_id)
+                                                .filter((b: any) => showPastHireBookings || new Date(b.start_time) >= now)
+                                                .sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+                                        })().length === 0 && (
+                                            <tr><td colSpan={6} className="px-6 py-10 text-center text-sm text-muted-foreground">
+                                                {showPastHireBookings ? 'No vehicle hire bookings yet.' : 'No upcoming hire bookings.'}
+                                            </td></tr>
                                         )}
-                                        {allBookings.filter((b: any) => b.hire_id).map((b: any) => {
+                                        {(() => {
+                                            const now = new Date()
+                                            return allBookings
+                                                .filter((b: any) => b.hire_id)
+                                                .filter((b: any) => showPastHireBookings || new Date(b.start_time) >= now)
+                                                .sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+                                        })().map((b: any) => {
                                             const student = allUsers.find((u: any) => u.id === b.student_id)
                                             const hire = vehicleHires.find((h: any) => h.id === b.hire_id)
                                             return (
@@ -1667,6 +1772,14 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                     <td className="px-6 py-4">
                                                         <p className="text-sm">{new Date(b.start_time).toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', day: 'numeric', month: 'short', year: 'numeric' })}</p>
                                                         <p className="text-xs text-muted-foreground">{new Date(b.start_time).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })} – {new Date(b.end_time).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })}</p>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        {b.created_at ? (
+                                                            <>
+                                                                <p className="text-sm">{new Date(b.created_at).toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                                                <p className="text-xs text-muted-foreground">{new Date(b.created_at).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })}</p>
+                                                            </>
+                                                        ) : <span className="text-xs text-muted-foreground">—</span>}
                                                     </td>
                                                     <td className="px-6 py-4 text-sm text-muted-foreground max-w-xs truncate">
                                                         {b.pickup_address || '—'}
@@ -1930,6 +2043,27 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                         </form>
                                     </div>
 
+                                    {/* Google Calendar connect */}
+                                    <div className="bg-card border border-border rounded-[2.5rem] p-6 shadow-sm flex items-center justify-between gap-4">
+                                        <div>
+                                            <p className="font-bold text-sm flex items-center gap-2"><Calendar className="w-4 h-4 text-accent" /> Google Calendar</p>
+                                            <p className="text-xs text-muted-foreground mt-0.5">
+                                                {selectedInstructor?.google_calendar_refresh_token
+                                                    ? "Calendar connected — bookings sync automatically to this instructor's Google Calendar."
+                                                    : "Connect this instructor's Google account so their bookings appear in their own calendar."}
+                                            </p>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant={selectedInstructor?.google_calendar_refresh_token ? 'outline' : 'primary'}
+                                            className="shrink-0 gap-2 rounded-xl"
+                                            onClick={() => window.location.href = `/api/calendar/auth?instructorId=${selectedInstructor?.id}`}
+                                        >
+                                            <Calendar className="w-4 h-4" />
+                                            {selectedInstructor?.google_calendar_refresh_token ? 'Reconnect' : 'Connect Calendar'}
+                                        </Button>
+                                    </div>
+
                                     {/* Availability Calendar */}
                                     <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-sm space-y-5">
                                         {/* Bulk availability setter */}
@@ -2094,6 +2228,8 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                             .map(b => {
                                                                 const student = allUsers.find((u: any) => u.id === b.student_id)
                                                                 const lesson = lessons.find((l: any) => l.id === b.lesson_id)
+                                                                const startLocal = new Date(b.start_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })
+                                                                const endLocal = new Date(b.end_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })
                                                                 return {
                                                                     id: `booking-${b.id}`,
                                                                     title: student?.full_name || 'Booked',
@@ -2102,18 +2238,43 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                                     backgroundColor: b.payment_status === 'paid' ? '#3b82f6' : '#8b5cf6',
                                                                     borderColor: b.payment_status === 'paid' ? '#2563eb' : '#7c3aed',
                                                                     textColor: '#fff',
-                                                                    extendedProps: { type: 'booking', student: student?.full_name, lesson: lesson?.title, status: b.status, payment: b.payment_status },
+                                                                    extendedProps: {
+                                                                        type: 'booking',
+                                                                        student: student?.full_name,
+                                                                        studentPhone: student?.phone,
+                                                                        lesson: lesson?.title,
+                                                                        status: b.status,
+                                                                        payment: b.payment_status,
+                                                                        pickupAddress: b.pickup_address,
+                                                                        vehicleType: b.vehicle_type,
+                                                                        transmissionType: b.transmission_type,
+                                                                        timeRange: `${startLocal} – ${endLocal}`,
+                                                                    },
                                                                 }
                                                             }),
                                                     ]}
                                                     eventContent={(arg) => {
                                                         if (arg.event.extendedProps.type === 'booking') {
+                                                            const p = arg.event.extendedProps
                                                             return (
-                                                                <div className="px-2 py-1.5 h-full overflow-hidden flex flex-col gap-0.5">
-                                                                    <div className="text-xs font-bold leading-tight truncate">👤 {arg.event.extendedProps.student}</div>
-                                                                    <div className="text-[11px] font-medium opacity-95 truncate">{arg.event.extendedProps.lesson}</div>
+                                                                <div
+                                                                    className="px-2 py-1.5 h-full overflow-hidden flex flex-col gap-0.5 cursor-pointer"
+                                                                    onMouseEnter={(e) => {
+                                                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                                                                        // Position tooltip to the right of the event; fall back to left if near right edge
+                                                                        const tooltipWidth = 240
+                                                                        const spaceRight = window.innerWidth - rect.right
+                                                                        const x = spaceRight >= tooltipWidth + 12
+                                                                            ? rect.right + 8
+                                                                            : rect.left - tooltipWidth - 8
+                                                                        setCalendarTooltip({ props: p, x, y: rect.top })
+                                                                    }}
+                                                                    onMouseLeave={() => setCalendarTooltip(null)}
+                                                                >
+                                                                    <div className="text-xs font-bold leading-tight truncate">👤 {p.student}</div>
+                                                                    <div className="text-[11px] font-medium opacity-95 truncate">{p.lesson}</div>
                                                                     <div className="text-[11px] font-semibold capitalize px-1.5 py-0.5 rounded-full bg-white/20 w-fit">
-                                                                        {arg.event.extendedProps.payment === 'paid' ? '✓ Paid' : '⏳ Pending'}
+                                                                        {p.payment === 'paid' ? '✓ Paid' : '⏳ Pending'}
                                                                     </div>
                                                                 </div>
                                                             )
