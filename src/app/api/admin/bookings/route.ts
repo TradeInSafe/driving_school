@@ -51,23 +51,25 @@ export async function POST(request: NextRequest) {
         const { data: hire } = await db.from('vehicle_hires').select('duration_minutes, vehicle_type').eq('id', hireId).single()
         if (!hire) return NextResponse.json({ error: 'Hire option not found.' }, { status: 400 })
 
+        const BUFFER_MS = 30 * 60_000
         const startTime = new Date(`${date}T${time}:00+10:00`)
         const endTime = new Date(startTime.getTime() + hire.duration_minutes * 60000)
 
-        // Check vehicle isn't already booked at this time
+        // Check vehicle isn't already booked within the booking window + 30-min buffer
         const { data: conflicts } = await db
             .from('bookings')
-            .select('id, start_time')
+            .select('id, start_time, end_time')
             .eq('hire_id', hireId)
             .in('status', ['scheduled'])
-            .lt('start_time', endTime.toISOString())
-            .gt('end_time', startTime.toISOString())
+            .lt('start_time', new Date(endTime.getTime() + BUFFER_MS).toISOString())
+            .gt('end_time', new Date(startTime.getTime() - BUFFER_MS).toISOString())
 
         if (conflicts && conflicts.length > 0) {
-            const clashTime = new Date(conflicts[0].start_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
-            const clashDate = new Date(conflicts[0].start_time).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })
+            const clash = conflicts[0]
+            const clashTime = new Date(clash.start_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })
+            const clashDate = new Date(clash.start_time).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Australia/Brisbane' })
             return NextResponse.json(
-                { error: `This vehicle is already booked on ${clashDate} at ${clashTime}. Please choose a different time.` },
+                { error: `This vehicle is already booked on ${clashDate} at ${clashTime} (including 30-min buffer). Please choose a different time.` },
                 { status: 409 }
             )
         }

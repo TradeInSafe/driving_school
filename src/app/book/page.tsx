@@ -175,22 +175,9 @@ function BookingPage() {
         setAvailabilityLoading(true)
         setHireBookings([])
         try {
-            const { data } = await supabase
-                .from('bookings')
-                .select('id, start_time, end_time')
-                .eq('hire_id', hireId)
-                .eq('status', 'scheduled')
-            if (data) {
-                setHireBookings(data.map((b: any) => ({
-                    id: b.id,
-                    start: b.start_time,
-                    end: b.end_time,
-                    title: 'Vehicle Booked',
-                    backgroundColor: '#ef4444',
-                    borderColor: '#dc2626',
-                    editable: false,
-                })))
-            }
+            const res = await fetch(`/api/hire-availability?hireId=${hireId}`)
+            const json = await res.json()
+            if (json.events) setHireBookings(json.events)
         } catch (err) {
             console.error('Error fetching hire bookings:', err)
         } finally {
@@ -314,13 +301,28 @@ function BookingPage() {
 
         // Conflict check
         const isHireOnlyMode = bookingMode === 'hire' && !needsInstructor
-        const isConflict = isHireOnlyMode
-            ? hireBookings.some(booking => {
-                const bStart = new Date(booking.start).getTime()
-                const bEnd = new Date(booking.end).getTime()
-                return slotStart.getTime() < bEnd && slotEnd.getTime() > bStart
-            })
-            : instructorBookings.some(booking => {
+        if (isHireOnlyMode) {
+            const slotStartMs = slotStart.getTime()
+            const slotEndMs = slotEnd.getTime()
+
+            // Check against the actual booking (isBooked) first
+            const bookedConflict = hireBookings.find(b => b.isBooked && slotStartMs < new Date(b.end).getTime() && slotEndMs > new Date(b.start).getTime())
+            if (bookedConflict) {
+                const bookedAt = new Date(bookedConflict.start).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })
+                const bookedDate = new Date(bookedConflict.start).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Australia/Brisbane' })
+                setErrorMsg(`This vehicle is already booked on ${bookedDate} at ${bookedAt}. Please choose a different time.`)
+                return
+            }
+
+            // Check against buffer period
+            const bufferConflict = hireBookings.find(b => b.isBuffer && slotStartMs < new Date(b.end).getTime() && slotEndMs > new Date(b.start).getTime())
+            if (bufferConflict) {
+                const bufferEnds = new Date(bufferConflict.end).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })
+                setErrorMsg(`This time falls within the 30-minute buffer after a booking. The vehicle is available again from ${bufferEnds}. Please choose a later slot.`)
+                return
+            }
+        } else {
+            const isConflict = instructorBookings.some(booking => {
                 if (booking.extendedProps?.isBuffer) return false
                 const bStart = new Date(booking.start).getTime()
                 const isSameStudent = booking.extendedProps?.studentId === user?.id
@@ -329,13 +331,10 @@ function BookingPage() {
                     : new Date(booking.end).getTime() + bufferMins * 60 * 1000
                 return slotStart.getTime() < effectiveEnd && slotEnd.getTime() > bStart
             })
-
-        if (isConflict) {
-            setErrorMsg(isHireOnlyMode
-                ? 'This vehicle is already booked at this time. Please choose a different slot.'
-                : `This slot is unavailable — a ${bufferMins}-min travel buffer is required between lessons. Please choose a later time.`
-            )
-            return
+            if (isConflict) {
+                setErrorMsg(`This slot is unavailable — a ${bufferMins}-min travel buffer is required between lessons. Please choose a later time.`)
+                return
+            }
         }
 
         // Block past slots
@@ -569,7 +568,7 @@ function BookingPage() {
                                         <div>
                                             <p className="font-bold text-sm">{selectedHire.title}</p>
                                             <p className="text-xs text-muted-foreground">
-                                                {selectedHire.vehicle_type === 'truck' ? 'Heavy Vehicle' : 'Car'} · {selectedHire.duration_minutes} min · Red slots = already booked
+                                                {selectedHire.vehicle_type === 'truck' ? 'Heavy Vehicle' : 'Car'} · {selectedHire.duration_minutes} min
                                             </p>
                                         </div>
                                     </div>
@@ -592,7 +591,9 @@ function BookingPage() {
                                     height="auto"
                                     dateClick={handleDateClick}
                                     events={isHireNoInstructor ? [...hireBookings, ...selectedEvents] : [...instructorBookings, ...selectedEvents]}
-                                    businessHours={isHireNoInstructor ? undefined : businessHours}
+                                    businessHours={isHireNoInstructor
+                                        ? { daysOfWeek: [0, 1, 2, 3, 4, 5, 6], startTime: '07:00', endTime: '19:00' }
+                                        : businessHours}
                                     eventContent={(arg) => {
                                         if (arg.event.extendedProps?.isBuffer) {
                                             return (

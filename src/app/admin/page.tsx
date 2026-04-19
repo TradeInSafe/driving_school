@@ -1689,6 +1689,30 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                 </div>
                                             </div>
 
+                                            {/* Existing bookings for this vehicle on selected date */}
+                                            {hireBookingData.hireId && hireBookingData.date && (() => {
+                                                const dayBookings = allBookings.filter((b: any) =>
+                                                    b.hire_id === hireBookingData.hireId &&
+                                                    b.status === 'scheduled' &&
+                                                    new Date(b.start_time).toLocaleDateString('en-CA', { timeZone: 'Australia/Brisbane' }) === hireBookingData.date
+                                                )
+                                                if (!dayBookings.length) return null
+                                                return (
+                                                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1">
+                                                        <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Already booked on this date</p>
+                                                        {dayBookings.map((b: any) => (
+                                                            <p key={b.id} className="text-xs text-amber-800">
+                                                                {new Date(b.start_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })}
+                                                                {' – '}
+                                                                {new Date(b.end_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })}
+                                                                {' · '}
+                                                                {allUsers.find((u: any) => u.id === b.student_id)?.full_name || 'Unknown student'}
+                                                            </p>
+                                                        ))}
+                                                    </div>
+                                                )
+                                            })()}
+
                                             <div className="space-y-1">
                                                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Pickup Address</label>
                                                 <input
@@ -2172,7 +2196,7 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                     headerToolbar={{
                                                         left: 'prev,next today',
                                                         center: 'title',
-                                                        right: 'timeGridWeek,dayGridMonth',
+                                                        right: 'timeGridDay,timeGridWeek,dayGridMonth',
                                                     }}
                                                     locale="en-AU"
                                                     dayHeaderFormat={{ day: '2-digit', month: '2-digit', omitCommas: true }}
@@ -2564,90 +2588,153 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
 
                         <form onSubmit={handleSaveBookingEdit} className="space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Instructor */}
-                                <div className="space-y-1">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Instructor</label>
-                                    <select
-                                        value={bookingEditForm.instructorId}
-                                        onChange={e => setBookingEditForm(f => ({ ...f, instructorId: e.target.value, time: '' }))}
-                                        required
-                                        className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
-                                    >
-                                        <option value="">Select instructor</option>
-                                        {instructors.map((inst: any) => (
-                                            <option key={inst.id} value={inst.id}>{inst.full_name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                {/* Lesson */}
-                                <div className="space-y-1">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Lesson</label>
-                                    <select
-                                        value={bookingEditForm.lessonId}
-                                        onChange={e => setBookingEditForm(f => ({ ...f, lessonId: e.target.value, time: '' }))}
-                                        required
-                                        className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
-                                    >
-                                        <option value="">Select lesson</option>
-                                        {lessons.map((l: any) => (
-                                            <option key={l.id} value={l.id}>{l.title} — ${l.price}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                {/* Date */}
-                                <div className="space-y-1">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Date</label>
-                                    <input
-                                        type="date"
-                                        required
-                                        value={bookingEditForm.date}
-                                        onChange={e => setBookingEditForm(f => ({ ...f, date: e.target.value, time: '' }))}
-                                        className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
-                                    />
-                                </div>
-
-                                {/* Time — slot picker */}
-                                <div className="space-y-2 md:col-span-2">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                                        Available Times
-                                        {bookingEditForm.date && bookingEditForm.instructorId && (
-                                            <span className="ml-2 normal-case font-normal text-muted-foreground/70">
-                                                — {new Date(bookingEditForm.date + 'T00:00:00').toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}
-                                            </span>
-                                        )}
-                                    </label>
-                                    {!bookingEditForm.instructorId || !bookingEditForm.date ? (
-                                        <p className="text-xs text-muted-foreground italic">Select an instructor and date to see available times.</p>
-                                    ) : slotsLoading ? (
-                                        <div className="flex items-center gap-2 py-2">
-                                            <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-                                            <span className="text-xs text-muted-foreground">Loading available times…</span>
+                                {editingBooking.hire_id ? (
+                                    /* ── Hire booking — read-only hire label, direct time input ── */
+                                    <>
+                                        <div className="space-y-1 md:col-span-2">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Vehicle Hire</label>
+                                            <p className="px-3 py-2.5 bg-muted border border-border rounded-xl text-sm">
+                                                {vehicleHires.find((h: any) => h.id === editingBooking.hire_id)?.title || 'Vehicle Hire'}
+                                            </p>
                                         </div>
-                                    ) : slotsMessage ? (
-                                        <p className="text-xs text-amber-600 font-medium">{slotsMessage}</p>
-                                    ) : (
-                                        <div className="flex flex-wrap gap-2">
-                                            {availableSlots.map(slot => (
-                                                <button
-                                                    key={slot.value}
-                                                    type="button"
-                                                    onClick={() => setBookingEditForm(f => ({ ...f, time: slot.value }))}
-                                                    className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-all ${
-                                                        bookingEditForm.time === slot.value
-                                                            ? 'bg-accent text-white border-accent shadow-sm'
-                                                            : 'bg-muted border-border hover:border-accent/50 text-foreground'
-                                                    }`}
-                                                >
-                                                    {slot.label}
-                                                </button>
-                                            ))}
+
+                                        {/* Date */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Date</label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={bookingEditForm.date}
+                                                onChange={e => setBookingEditForm(f => ({ ...f, date: e.target.value }))}
+                                                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
+                                            />
                                         </div>
-                                    )}
-                                    {/* Keep a hidden required input so form validation still works */}
-                                    <input type="hidden" name="time" value={bookingEditForm.time} required />
-                                </div>
+
+                                        {/* Time — direct input, no slot picker needed for hire */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Time</label>
+                                            <input
+                                                type="time"
+                                                required
+                                                value={bookingEditForm.time}
+                                                onChange={e => setBookingEditForm(f => ({ ...f, time: e.target.value }))}
+                                                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
+                                            />
+                                        </div>
+
+                                        {/* Existing bookings for this vehicle on selected date */}
+                                        {bookingEditForm.date && (() => {
+                                            const dayBookings = allBookings.filter((b: any) =>
+                                                b.hire_id === editingBooking.hire_id &&
+                                                b.id !== editingBooking.id &&
+                                                b.status === 'scheduled' &&
+                                                new Date(b.start_time).toLocaleDateString('en-CA', { timeZone: 'Australia/Brisbane' }) === bookingEditForm.date
+                                            )
+                                            if (!dayBookings.length) return null
+                                            return (
+                                                <div className="md:col-span-2 bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1">
+                                                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Already booked on this date</p>
+                                                    {dayBookings.map((b: any) => (
+                                                        <p key={b.id} className="text-xs text-amber-800">
+                                                            {new Date(b.start_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })}
+                                                            {' – '}
+                                                            {new Date(b.end_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })}
+                                                            {' · '}
+                                                            {allUsers.find((u: any) => u.id === b.student_id)?.full_name || 'Unknown student'}
+                                                        </p>
+                                                    ))}
+                                                </div>
+                                            )
+                                        })()}
+                                    </>
+                                ) : (
+                                    /* ── Lesson booking — instructor + lesson selects + slot picker ── */
+                                    <>
+                                        {/* Instructor */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Instructor</label>
+                                            <select
+                                                value={bookingEditForm.instructorId}
+                                                onChange={e => setBookingEditForm(f => ({ ...f, instructorId: e.target.value, time: '' }))}
+                                                required
+                                                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
+                                            >
+                                                <option value="">Select instructor</option>
+                                                {instructors.map((inst: any) => (
+                                                    <option key={inst.id} value={inst.id}>{inst.full_name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Lesson */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Lesson</label>
+                                            <select
+                                                value={bookingEditForm.lessonId}
+                                                onChange={e => setBookingEditForm(f => ({ ...f, lessonId: e.target.value, time: '' }))}
+                                                required
+                                                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
+                                            >
+                                                <option value="">Select lesson</option>
+                                                {lessons.map((l: any) => (
+                                                    <option key={l.id} value={l.id}>{l.title} — ${l.price}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Date */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Date</label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={bookingEditForm.date}
+                                                onChange={e => setBookingEditForm(f => ({ ...f, date: e.target.value, time: '' }))}
+                                                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
+                                            />
+                                        </div>
+
+                                        {/* Time — slot picker */}
+                                        <div className="space-y-2 md:col-span-2">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                                                Available Times
+                                                {bookingEditForm.date && bookingEditForm.instructorId && (
+                                                    <span className="ml-2 normal-case font-normal text-muted-foreground/70">
+                                                        — {new Date(bookingEditForm.date + 'T00:00:00').toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                    </span>
+                                                )}
+                                            </label>
+                                            {!bookingEditForm.instructorId || !bookingEditForm.date ? (
+                                                <p className="text-xs text-muted-foreground italic">Select an instructor and date to see available times.</p>
+                                            ) : slotsLoading ? (
+                                                <div className="flex items-center gap-2 py-2">
+                                                    <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                                                    <span className="text-xs text-muted-foreground">Loading available times…</span>
+                                                </div>
+                                            ) : slotsMessage ? (
+                                                <p className="text-xs text-amber-600 font-medium">{slotsMessage}</p>
+                                            ) : (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {availableSlots.map(slot => (
+                                                        <button
+                                                            key={slot.value}
+                                                            type="button"
+                                                            onClick={() => setBookingEditForm(f => ({ ...f, time: slot.value }))}
+                                                            className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-all ${
+                                                                bookingEditForm.time === slot.value
+                                                                    ? 'bg-accent text-white border-accent shadow-sm'
+                                                                    : 'bg-muted border-border hover:border-accent/50 text-foreground'
+                                                            }`}
+                                                        >
+                                                            {slot.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <input type="hidden" name="time" value={bookingEditForm.time} required />
+                                        </div>
+                                    </>
+                                )}
 
                                 {/* Status */}
                                 <div className="space-y-1">
