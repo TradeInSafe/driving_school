@@ -44,6 +44,7 @@ export async function sendBookingConfirmationEmail({
     const dateStr = new Date(startTime).toLocaleString('en-AU', {
         dateStyle: 'full',
         timeStyle: 'short',
+        timeZone: 'Australia/Brisbane',
     })
 
     // 1. Send to Student

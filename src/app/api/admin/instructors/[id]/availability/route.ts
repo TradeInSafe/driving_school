@@ -26,19 +26,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const { id } = await params
-    const { day_of_week, start_time, end_time } = await request.json()
+    const { day_of_week, start_time, end_time, specific_date, type = 'available' } = await request.json()
 
-    if (day_of_week === undefined || !start_time || !end_time) {
+    if (!start_time || !end_time) {
         return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
     if (start_time >= end_time) {
         return NextResponse.json({ error: 'Start time must be before end time' }, { status: 400 })
     }
 
+    // Derive day_of_week from specific_date if not provided
+    const resolvedDayOfWeek = day_of_week !== undefined
+        ? day_of_week
+        : specific_date ? new Date(specific_date + 'T00:00:00').getDay() : undefined
+
     const db = getServiceRoleClient()
     const { data, error } = await db
         .from('availability')
-        .insert({ instructor_id: id, day_of_week, start_time, end_time })
+        .insert({ instructor_id: id, day_of_week: resolvedDayOfWeek, start_time, end_time, specific_date: specific_date || null, type })
         .select()
         .single()
 

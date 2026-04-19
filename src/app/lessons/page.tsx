@@ -95,7 +95,7 @@ export default function LessonsPage() {
                         transition={{ delay: 0.1 }}
                         className="text-primary-foreground/80 max-w-2xl mx-auto text-lg leading-relaxed mt-4"
                     >
-                        Great Heavy Driving School delivers a comprehensive range of standard Car (C Class) and Heavy Vehicle Driving Courses, including One-Day and Package Training for HR and MR. Flexible options designed to help you pass your test and drive with confidence.
+                        Brisbane Bayside Driving School delivers a comprehensive range of standard Car (C Class) and Heavy Vehicle Driving Courses, including One-Day and Package Training for HR and MR. Flexible options designed to help you pass your test and drive with confidence.
                     </motion.p>
                 </div>
             </section>
@@ -146,7 +146,7 @@ export default function LessonsPage() {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center space-y-4 mb-16">
                         <h2 className="text-accent font-bold tracking-widest uppercase text-sm">Bundle & Save</h2>
-                        <p className="text-4xl font-bold font-outfit">Discounted Lesson Packages</p>
+                        <p className="text-4xl font-bold font-outfit">Package Lessons</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">

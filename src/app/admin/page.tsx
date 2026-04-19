@@ -147,15 +147,17 @@ export default function AdminDashboard() {
     const [editingHire, setEditingHire] = useState<any | null>(null)
     const [showNewInstructorModal, setShowNewInstructorModal] = useState(false)
     const [newInstructorForm, setNewInstructorForm] = useState({ full_name: '', email: '', phone: '', bio: '', experience_years: '', car_model: '', languages: 'English', rating: '5' })
-    const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'lessons' | 'hires' | 'users' | 'bookings' | 'settings' | 'payments' | 'instructors' | 'reports'>('overview')
+    const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'lessons' | 'hires' | 'users' | 'bookings' | 'hire-bookings' | 'settings' | 'payments' | 'instructors' | 'reports'>('overview')
 
     // Instructor management state
     const [selectedInstructor, setSelectedInstructor] = useState<any | null>(null)
     const [instructorForm, setInstructorForm] = useState({ full_name: '', email: '', bio: '', experience_years: '', car_model: '', languages: '', phone: '', rating: '' })
     const [photoUploading, setPhotoUploading] = useState(false)
     const [bulkAvailForm, setBulkAvailForm] = useState({ startMonth: '', endMonth: '', start_time: '07:00', end_time: '19:00' })
+    const [blockedSlotForm, setBlockedSlotForm] = useState({ date: '', start_time: '12:00', end_time: '13:00' })
     const [bulkAvailLoading, setBulkAvailLoading] = useState(false)
     const [instructorAvailability, setInstructorAvailability] = useState<any[]>([])
+    const [calendarTooltip, setCalendarTooltip] = useState<{ props: any; x: number; y: number } | null>(null)
     const [availabilityLoading, setAvailabilityLoading] = useState(false)
     const [newSlot, setNewSlot] = useState({ day_of_week: '1', start_time: '09:00', end_time: '17:00' })
     const [addingSlotDay, setAddingSlotDay] = useState<number | null>(null)
@@ -177,6 +179,14 @@ export default function AdminDashboard() {
     const [logoUrl, setLogoUrl] = useState<string>('')
     const [isUploadingLogo, setIsUploadingLogo] = useState(false)
     const [showManualBookingModal, setShowManualBookingModal] = useState(false)
+    const [showNewHireBookingModal, setShowNewHireBookingModal] = useState(false)
+    const [hireBookingTab, setHireBookingTab] = useState<'existing' | 'new'>('existing')
+    const [hireBookingData, setHireBookingData] = useState({ studentId: '', hireId: '', date: '', time: '', pickupAddress: '', paymentMethod: 'pending' as 'paid' | 'pending' })
+    const [hireBookingNewStudent, setHireBookingNewStudent] = useState({ full_name: '', email: '', phone: '', address: '' })
+    const [hireBookingError, setHireBookingError] = useState<string | null>(null)
+    const [hireBookingLoading, setHireBookingLoading] = useState(false)
+    const [showPastBookings, setShowPastBookings] = useState(false)
+    const [showPastHireBookings, setShowPastHireBookings] = useState(false)
     const [editingBooking, setEditingBooking] = useState<any | null>(null)
     const [bookingEditForm, setBookingEditForm] = useState({
         instructorId: '', lessonId: '', date: '', time: '',
@@ -517,8 +527,9 @@ const toggleLessonStatus = async (id: string, currentStatus: boolean) => {
 
     const openEditBooking = (b: any) => {
         const start = new Date(b.start_time)
-        const dateStr = start.toISOString().slice(0, 10)
-        const timeStr = start.toTimeString().slice(0, 5)
+        // Extract date/time in Brisbane timezone (AEST = UTC+10, no DST in QLD)
+        const dateStr = start.toLocaleDateString('en-CA', { timeZone: 'Australia/Brisbane' })
+        const timeStr = start.toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit', hour12: false })
         setBookingEditForm({
             instructorId: b.instructor_id || '',
             lessonId: b.lesson_id || '',
@@ -620,6 +631,33 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
         }
     }
 
+    const handleCreateHireBooking = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setHireBookingError(null)
+        setHireBookingLoading(true)
+        try {
+            const res = await fetch('/api/admin/bookings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...hireBookingData,
+                    newStudent: hireBookingTab === 'new' ? hireBookingNewStudent : null,
+                }),
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error)
+            setShowNewHireBookingModal(false)
+            setHireBookingData({ studentId: '', hireId: '', date: '', time: '', pickupAddress: '', paymentMethod: 'pending' })
+            setHireBookingNewStudent({ full_name: '', email: '', phone: '', address: '' })
+            setHireBookingTab('existing')
+            fetchAdminData()
+        } catch (err: any) {
+            setHireBookingError(err.message)
+        } finally {
+            setHireBookingLoading(false)
+        }
+    }
+
     const selectInstructor = async (instructor: any) => {
         setSelectedInstructor(instructor)
         setInstructorForm({
@@ -715,18 +753,20 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
     const handleBulkAvailability = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!selectedInstructor) return
-        if (!confirm(`This will replace all existing availability for ${selectedInstructor.full_name} with ${bulkAvailForm.start_time}–${bulkAvailForm.end_time} every day. Continue?`)) return
+        const { startMonth, endMonth, start_time, end_time } = bulkAvailForm
+        const label = startMonth === endMonth ? startMonth : `${startMonth} – ${endMonth}`
+        if (!confirm(`Set availability ${start_time}–${end_time} for every day in ${label} for ${selectedInstructor.full_name}? Existing slots in this range will be replaced.`)) return
         setBulkAvailLoading(true)
         try {
             const res = await fetch(`/api/admin/instructors/${selectedInstructor.id}/availability/bulk`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ start_time: bulkAvailForm.start_time, end_time: bulkAvailForm.end_time }),
+                body: JSON.stringify({ startMonth, endMonth, start_time, end_time }),
             })
             if (!res.ok) throw new Error((await res.json()).error)
             const updated = await fetch(`/api/admin/instructors/${selectedInstructor.id}/availability`)
             if (updated.ok) setInstructorAvailability(await updated.json())
-            alert(`Availability set for all 7 days (${bulkAvailForm.start_time}–${bulkAvailForm.end_time})`)
+            alert(`Availability set for ${label} (${start_time}–${end_time})`)
         } catch (err: any) {
             alert('Error setting availability: ' + err.message)
         } finally {
@@ -792,15 +832,15 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
 
     const toMins = (t: string) => { const [h, m] = t.slice(0, 5).split(':').map(Number); return h * 60 + m }
 
-    const hasOverlap = (dayOfWeek: number, startTime: string, endTime: string, excludeId?: string) => {
+    const hasOverlap = (specificDate: string, startTime: string, endTime: string, type: string, excludeId?: string) => {
         return instructorAvailability
-            .filter(s => s.day_of_week === dayOfWeek && s.id !== excludeId)
+            .filter(s => s.specific_date === specificDate && s.type === type && s.id !== excludeId)
             .some(s => toMins(startTime) < toMins(s.end_time) && toMins(endTime) > toMins(s.start_time))
     }
 
     const handleCalendarSelect = async (info: any) => {
         if (!selectedInstructor) return
-        const dayOfWeek = info.start.getDay()
+        const specificDate = info.start.toLocaleDateString('en-CA', { timeZone: 'Australia/Brisbane' })
         const startTime = info.start.toTimeString().slice(0, 5)
         const endTime = info.end.toTimeString().slice(0, 5)
 
@@ -808,21 +848,41 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
             alert('End time must be after start time.')
             return
         }
-        if (hasOverlap(dayOfWeek, startTime, endTime)) {
-            alert(`This slot overlaps with an existing availability slot for ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dayOfWeek]}.`)
+        if (hasOverlap(specificDate, startTime, endTime, 'available')) {
+            alert(`An available slot already exists for this time on ${specificDate}.`)
             return
         }
         try {
             const res = await fetch(`/api/admin/instructors/${selectedInstructor.id}/availability`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ day_of_week: dayOfWeek, start_time: startTime, end_time: endTime }),
+                body: JSON.stringify({ specific_date: specificDate, start_time: startTime, end_time: endTime, type: 'available' }),
             })
             if (!res.ok) throw new Error((await res.json()).error)
             const updated = await fetch(`/api/admin/instructors/${selectedInstructor.id}/availability`)
             if (updated.ok) setInstructorAvailability(await updated.json())
         } catch (err: any) {
             alert('Error adding slot: ' + err.message)
+        }
+    }
+
+    const handleAddBlockedSlot = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!selectedInstructor) return
+        const { date, start_time, end_time } = blockedSlotForm
+        if (!date || !start_time || !end_time) { alert('Please fill in date, start and end time.'); return }
+        if (start_time >= end_time) { alert('End time must be after start time.'); return }
+        try {
+            const res = await fetch(`/api/admin/instructors/${selectedInstructor.id}/availability`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ specific_date: date, start_time, end_time, type: 'blocked' }),
+            })
+            if (!res.ok) throw new Error((await res.json()).error)
+            const updated = await fetch(`/api/admin/instructors/${selectedInstructor.id}/availability`)
+            if (updated.ok) setInstructorAvailability(await updated.json())
+        } catch (err: any) {
+            alert('Error adding block: ' + err.message)
         }
     }
 
@@ -854,98 +914,122 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
 
     const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+    const NAV_ITEMS = [
+        { key: 'overview',      label: 'Overview',      icon: LayoutDashboard },
+        { key: 'analytics',     label: 'Analytics',     icon: TrendingUp },
+        { key: 'lessons',       label: 'Lessons',       icon: Clock },
+        { key: 'hires',         label: 'Vehicle Hire',  icon: Car },
+        { key: 'users',         label: 'Students',      icon: Users },
+        { key: 'bookings',      label: 'Bookings',      icon: Calendar },
+        { key: 'hire-bookings', label: 'Hire Bookings', icon: Car },
+        { key: 'payments',      label: 'Payments',      icon: DollarSign },
+        { key: 'instructors',   label: 'Instructors',   icon: UserCheck },
+        { key: 'reports',       label: 'Reports',       icon: TrendingUp },
+        { key: 'settings',      label: 'Settings',      icon: Settings },
+    ] as const
+
     return (
-        <div className="max-w-7xl mx-auto px-4 py-12 space-y-12">
-            <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                <div className="flex items-center gap-4">
-                    <div className="bg-primary p-3 rounded-2xl text-white">
-                        <LayoutDashboard className="w-8 h-8" />
-                    </div>
-                    <div>
-                        <h1 className="text-3xl font-bold font-outfit">Admin Panel</h1>
-                        <p className="text-muted-foreground">General system overview and management</p>
+        <div className="min-h-screen flex bg-muted/30">
+            {/* ── Calendar booking tooltip (fixed overlay, escapes all stacking contexts) ── */}
+            {calendarTooltip && (
+                <div
+                    className="pointer-events-none fixed z-[99999] w-60"
+                    style={{ left: calendarTooltip.x, top: calendarTooltip.y }}
+                >
+                    <div className="bg-gray-900 text-white text-xs rounded-lg shadow-2xl p-3 space-y-1.5 border border-white/10">
+                        <div className="font-bold text-sm border-b border-white/20 pb-1.5">{calendarTooltip.props.student}</div>
+                        {calendarTooltip.props.timeRange && (
+                            <div className="flex gap-2">
+                                <span className="text-white/60 shrink-0 w-14">Time</span>
+                                <span className="font-medium">{calendarTooltip.props.timeRange}</span>
+                            </div>
+                        )}
+                        {calendarTooltip.props.lesson && (
+                            <div className="flex gap-2">
+                                <span className="text-white/60 shrink-0 w-14">Lesson</span>
+                                <span className="font-medium">{calendarTooltip.props.lesson}</span>
+                            </div>
+                        )}
+                        {(() => {
+                            const p = calendarTooltip.props
+                            const vehicleLabel = p.vehicleType
+                                ? `${p.vehicleType.charAt(0).toUpperCase() + p.vehicleType.slice(1)}${p.transmissionType ? ` · ${p.transmissionType.charAt(0).toUpperCase() + p.transmissionType.slice(1)}` : ''}`
+                                : null
+                            return vehicleLabel ? (
+                                <div className="flex gap-2">
+                                    <span className="text-white/60 shrink-0 w-14">Vehicle</span>
+                                    <span className="font-medium">{vehicleLabel}</span>
+                                </div>
+                            ) : null
+                        })()}
+                        {calendarTooltip.props.pickupAddress && (
+                            <div className="flex gap-2">
+                                <span className="text-white/60 shrink-0 w-14">Pickup</span>
+                                <span className="font-medium break-words">{calendarTooltip.props.pickupAddress}</span>
+                            </div>
+                        )}
+                        {calendarTooltip.props.studentPhone && (
+                            <div className="flex gap-2">
+                                <span className="text-white/60 shrink-0 w-14">Phone</span>
+                                <span className="font-medium">{calendarTooltip.props.studentPhone}</span>
+                            </div>
+                        )}
+                        <div className="flex gap-2 pt-0.5 border-t border-white/20">
+                            <span className="text-white/60 shrink-0 w-14">Payment</span>
+                            <span className={`font-semibold ${calendarTooltip.props.payment === 'paid' ? 'text-green-400' : 'text-yellow-400'}`}>
+                                {calendarTooltip.props.payment === 'paid' ? '✓ Paid' : '⏳ Pending'}
+                            </span>
+                        </div>
                     </div>
                 </div>
-                <div className="flex gap-4">
-                    <Button
-                        variant="outline"
-                        className="rounded-2xl gap-2 text-red-600 border-red-200 hover:bg-red-50"
+            )}
+
+            {/* ── Sidebar ─────────────────────────────────────────────── */}
+            <aside className="w-56 shrink-0 bg-card border-r border-border flex flex-col h-screen sticky top-0">
+                {/* Logo */}
+                <div className="p-5 border-b border-border">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-primary p-2 rounded-xl text-white">
+                            <LayoutDashboard className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <p className="font-bold font-outfit text-sm leading-tight">Admin Panel</p>
+                            <p className="text-[11px] text-muted-foreground">Bayside Driving</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Nav items */}
+                <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+                    {NAV_ITEMS.map(item => (
+                        <button
+                            key={item.key}
+                            onClick={() => { setActiveTab(item.key as any); if (item.key === 'instructors') setSelectedInstructor(null) }}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all text-left ${
+                                activeTab === item.key
+                                    ? 'bg-accent text-white shadow-sm'
+                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                            }`}
+                        >
+                            <item.icon className="w-4 h-4 shrink-0" />
+                            {item.label}
+                        </button>
+                    ))}
+                </nav>
+
+                {/* Logout */}
+                <div className="p-3 border-t border-border">
+                    <button
                         onClick={handleLogout}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50 transition-all"
                     >
                         <LogOut className="w-4 h-4" /> Logout
-                    </Button>
-                    <Button
-                        variant={activeTab === 'overview' ? 'accent' : 'outline'}
-                        className="rounded-2xl"
-                        onClick={() => setActiveTab('overview')}
-                    >
-                        Overview
-                    </Button>
-                    <Button
-                        variant={activeTab === 'analytics' ? 'accent' : 'outline'}
-                        className="rounded-2xl"
-                        onClick={() => setActiveTab('analytics')}
-                    >
-                        Analytics
-                    </Button>
-                    <Button
-                        variant={activeTab === 'lessons' ? 'accent' : 'outline'}
-                        className="rounded-2xl"
-                        onClick={() => setActiveTab('lessons')}
-                    >
-                        Lessons
-                    </Button>
-                    <Button
-                        variant={activeTab === 'hires' ? 'accent' : 'outline'}
-                        className="rounded-2xl"
-                        onClick={() => setActiveTab('hires')}
-                    >
-                        Vehicle Hire
-                    </Button>
-                    <Button
-                        variant={activeTab === 'users' ? 'accent' : 'outline'}
-                        className="rounded-2xl"
-                        onClick={() => setActiveTab('users')}
-                    >
-                        Users
-                    </Button>
-                    <Button
-                        variant={activeTab === 'bookings' ? 'accent' : 'outline'}
-                        className="rounded-2xl"
-                        onClick={() => setActiveTab('bookings')}
-                    >
-                        Bookings
-                    </Button>
-                    <Button
-                        variant={activeTab === 'payments' ? 'accent' : 'outline'}
-                        className="rounded-2xl"
-                        onClick={() => setActiveTab('payments')}
-                    >
-                        Payments
-                    </Button>
-                    <Button
-                        variant={activeTab === 'instructors' ? 'accent' : 'outline'}
-                        className="rounded-2xl"
-                        onClick={() => { setActiveTab('instructors'); setSelectedInstructor(null) }}
-                    >
-                        Instructors
-                    </Button>
-                    <Button
-                        variant={activeTab === 'reports' ? 'accent' : 'outline'}
-                        className="rounded-2xl"
-                        onClick={() => setActiveTab('reports')}
-                    >
-                        Reports
-                    </Button>
-                    <Button
-                        variant={activeTab === 'settings' ? 'accent' : 'outline'}
-                        className="rounded-2xl"
-                        onClick={() => setActiveTab('settings')}
-                    >
-                        Settings
-                    </Button>
+                    </button>
                 </div>
-            </header>
+            </aside>
+
+            {/* ── Main content ─────────────────────────────────────────── */}
+            <main className="flex-1 min-w-0 p-8 space-y-8 overflow-y-auto">
 
             {/* Analytics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1368,7 +1452,16 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                         <>
                             <div className="flex justify-between items-center text-sm">
                                 <h2 className="text-2xl font-bold font-outfit">All Bookings</h2>
-                                <div className="flex gap-4">
+                                <div className="flex items-center gap-3">
+                                    <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={showPastBookings}
+                                            onChange={e => setShowPastBookings(e.target.checked)}
+                                            className="rounded"
+                                        />
+                                        Show past bookings
+                                    </label>
                                     <Button size="sm" variant="outline" className="rounded-xl gap-2" onClick={() => fetchAdminData()}>
                                         Refresh
                                     </Button>
@@ -1386,12 +1479,19 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                             <th className="px-6 py-5">Instructor</th>
                                             <th className="px-6 py-5">Lesson</th>
                                             <th className="px-6 py-5">Date & Time</th>
+                                            <th className="px-6 py-5">Booked On</th>
                                             <th className="px-6 py-5">Status</th>
                                             <th className="px-6 py-5 text-right">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border/50">
-                                        {allBookings.map(b => {
+                                        {(() => {
+                                            const now = new Date()
+                                            return allBookings
+                                                .filter((b: any) => !b.hire_id)
+                                                .filter((b: any) => showPastBookings || new Date(b.start_time) >= now)
+                                                .sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+                                        })().map(b => {
                                             const student = allUsers.find((u: any) => u.id === b.student_id);
                                             const instructor = instructors.find((inst: any) => inst.id === b.instructor_id);
                                             const lesson = lessons.find((l: any) => l.id === b.lesson_id);
@@ -1421,8 +1521,16 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                     )}
                                                 </td>
                                                 <td className="px-6 py-4">
-                                                    <p className="text-sm">{new Date(b.start_time).toLocaleDateString()}</p>
-                                                    <p className="text-xs text-muted-foreground">{new Date(b.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                    <p className="text-sm">{new Date(b.start_time).toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                                    <p className="text-xs text-muted-foreground">{new Date(b.start_time).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })} – {new Date(b.end_time).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })}</p>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {b.created_at ? (
+                                                        <>
+                                                            <p className="text-sm">{new Date(b.created_at).toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                                            <p className="text-xs text-muted-foreground">{new Date(b.created_at).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })}</p>
+                                                        </>
+                                                    ) : <span className="text-xs text-muted-foreground">—</span>}
                                                 </td>
                                                 <td className="px-6 py-4 space-y-1">
                                                     <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold uppercase ${b.status === 'scheduled' ? 'bg-blue-100 text-blue-700' :
@@ -1458,6 +1566,268 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                         </>
                     )}
 
+
+                    {activeTab === 'hire-bookings' && (
+                        <>
+                            <div className="flex justify-between items-center text-sm">
+                                <div>
+                                    <h2 className="text-2xl font-bold font-outfit">Vehicle Hire Bookings</h2>
+                                    <p className="text-muted-foreground text-sm mt-1">Bookings where a student has hired a vehicle for their test.</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                                        <input
+                                            type="checkbox"
+                                            checked={showPastHireBookings}
+                                            onChange={e => setShowPastHireBookings(e.target.checked)}
+                                            className="rounded"
+                                        />
+                                        Show past bookings
+                                    </label>
+                                    <Button size="sm" variant="outline" className="rounded-xl gap-2" onClick={() => fetchAdminData()}>
+                                        Refresh
+                                    </Button>
+                                    <Button size="sm" className="rounded-xl gap-2" onClick={() => { setHireBookingError(null); setShowNewHireBookingModal(true) }}>
+                                        <Plus className="w-4 h-4" /> New Hire Booking
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {showNewHireBookingModal && (
+                                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                                    <div className="bg-card border border-border rounded-[2.5rem] shadow-2xl w-full max-w-xl p-8 space-y-6 overflow-y-auto max-h-[90vh]">
+                                        <div className="flex justify-between items-center">
+                                            <h3 className="text-xl font-bold font-outfit">New Vehicle Hire Booking</h3>
+                                            <button onClick={() => setShowNewHireBookingModal(false)} className="text-muted-foreground hover:text-foreground text-2xl leading-none">✕</button>
+                                        </div>
+
+                                        {hireBookingError && (
+                                            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl flex items-center gap-3 text-sm">
+                                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                                <p>{hireBookingError}</p>
+                                            </div>
+                                        )}
+
+                                        {/* Student tab toggle */}
+                                        <div className="flex gap-1 bg-muted p-1 rounded-xl w-fit text-sm">
+                                            <button onClick={() => setHireBookingTab('existing')} className={`px-4 py-1.5 rounded-lg font-bold transition-all ${hireBookingTab === 'existing' ? 'bg-white shadow text-accent' : 'text-muted-foreground'}`}>Existing Student</button>
+                                            <button onClick={() => setHireBookingTab('new')} className={`px-4 py-1.5 rounded-lg font-bold transition-all ${hireBookingTab === 'new' ? 'bg-white shadow text-accent' : 'text-muted-foreground'}`}>New Student</button>
+                                        </div>
+
+                                        <form onSubmit={handleCreateHireBooking} className="space-y-4">
+                                            {hireBookingTab === 'existing' ? (
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Student *</label>
+                                                    <select
+                                                        required
+                                                        value={hireBookingData.studentId}
+                                                        onChange={e => setHireBookingData(d => ({ ...d, studentId: e.target.value }))}
+                                                        className="w-full bg-muted border border-border p-2 rounded-lg text-sm"
+                                                    >
+                                                        <option value="">Select a student…</option>
+                                                        {allUsers.map((u: any) => (
+                                                            <option key={u.id} value={u.id}>{u.full_name} {u.email ? `(${u.email})` : ''}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-2 gap-3 p-4 bg-muted/50 rounded-xl border border-border">
+                                                    <div className="space-y-1 col-span-2">
+                                                        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Full Name *</label>
+                                                        <input required value={hireBookingNewStudent.full_name} onChange={e => setHireBookingNewStudent(s => ({ ...s, full_name: e.target.value }))} placeholder="Jane Smith" className="w-full bg-background border border-border p-2 rounded-lg text-sm" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Email</label>
+                                                        <input type="email" value={hireBookingNewStudent.email} onChange={e => setHireBookingNewStudent(s => ({ ...s, email: e.target.value }))} placeholder="jane@example.com" className="w-full bg-background border border-border p-2 rounded-lg text-sm" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Phone</label>
+                                                        <input value={hireBookingNewStudent.phone} onChange={e => setHireBookingNewStudent(s => ({ ...s, phone: e.target.value }))} placeholder="04xx xxx xxx" className="w-full bg-background border border-border p-2 rounded-lg text-sm" />
+                                                    </div>
+                                                    <div className="space-y-1 col-span-2">
+                                                        <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Address</label>
+                                                        <input value={hireBookingNewStudent.address} onChange={e => setHireBookingNewStudent(s => ({ ...s, address: e.target.value }))} placeholder="123 Main St, Brisbane" className="w-full bg-background border border-border p-2 rounded-lg text-sm" />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Vehicle Hire Option *</label>
+                                                <select
+                                                    required
+                                                    value={hireBookingData.hireId}
+                                                    onChange={e => setHireBookingData(d => ({ ...d, hireId: e.target.value }))}
+                                                    className="w-full bg-muted border border-border p-2 rounded-lg text-sm"
+                                                >
+                                                    <option value="">Select vehicle hire…</option>
+                                                    {vehicleHires.filter((h: any) => h.is_active).map((h: any) => (
+                                                        <option key={h.id} value={h.id}>{h.vehicle_type === 'truck' ? '🚛' : '🚗'} {h.title} — ${h.price} · {h.duration_minutes}min</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Date *</label>
+                                                    <input
+                                                        type="date"
+                                                        required
+                                                        value={hireBookingData.date}
+                                                        onChange={e => setHireBookingData(d => ({ ...d, date: e.target.value }))}
+                                                        className="w-full bg-muted border border-border p-2 rounded-lg text-sm"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Time *</label>
+                                                    <input
+                                                        type="time"
+                                                        required
+                                                        value={hireBookingData.time}
+                                                        onChange={e => setHireBookingData(d => ({ ...d, time: e.target.value }))}
+                                                        className="w-full bg-muted border border-border p-2 rounded-lg text-sm"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Existing bookings for this vehicle on selected date */}
+                                            {hireBookingData.hireId && hireBookingData.date && (() => {
+                                                const dayBookings = allBookings.filter((b: any) =>
+                                                    b.hire_id === hireBookingData.hireId &&
+                                                    b.status === 'scheduled' &&
+                                                    new Date(b.start_time).toLocaleDateString('en-CA', { timeZone: 'Australia/Brisbane' }) === hireBookingData.date
+                                                )
+                                                if (!dayBookings.length) return null
+                                                return (
+                                                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1">
+                                                        <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Already booked on this date</p>
+                                                        {dayBookings.map((b: any) => (
+                                                            <p key={b.id} className="text-xs text-amber-800">
+                                                                {new Date(b.start_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })}
+                                                                {' – '}
+                                                                {new Date(b.end_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })}
+                                                                {' · '}
+                                                                {allUsers.find((u: any) => u.id === b.student_id)?.full_name || 'Unknown student'}
+                                                            </p>
+                                                        ))}
+                                                    </div>
+                                                )
+                                            })()}
+
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Pickup Address</label>
+                                                <input
+                                                    value={hireBookingData.pickupAddress}
+                                                    onChange={e => setHireBookingData(d => ({ ...d, pickupAddress: e.target.value }))}
+                                                    placeholder="123 Main St, Brisbane"
+                                                    className="w-full bg-muted border border-border p-2 rounded-lg text-sm"
+                                                />
+                                            </div>
+
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Payment Status</label>
+                                                <select
+                                                    value={hireBookingData.paymentMethod}
+                                                    onChange={e => setHireBookingData(d => ({ ...d, paymentMethod: e.target.value as 'paid' | 'pending' }))}
+                                                    className="w-full bg-muted border border-border p-2 rounded-lg text-sm"
+                                                >
+                                                    <option value="pending">Pending</option>
+                                                    <option value="paid">Paid</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="flex justify-end gap-3 pt-2">
+                                                <Button type="button" variant="ghost" onClick={() => setShowNewHireBookingModal(false)}>Cancel</Button>
+                                                <Button type="submit" isLoading={hireBookingLoading}>Create Hire Booking</Button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="bg-card border border-border rounded-[2.5rem] overflow-hidden shadow-sm">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-muted/50 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                            <th className="px-6 py-5">Student</th>
+                                            <th className="px-6 py-5">Vehicle Option</th>
+                                            <th className="px-6 py-5">Date & Time</th>
+                                            <th className="px-6 py-5">Booked On</th>
+                                            <th className="px-6 py-5">Pickup Address</th>
+                                            <th className="px-6 py-5">Status</th>
+                                            <th className="px-6 py-5 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border/50">
+                                        {(() => {
+                                            const now = new Date()
+                                            return allBookings
+                                                .filter((b: any) => b.hire_id)
+                                                .filter((b: any) => showPastHireBookings || new Date(b.start_time) >= now)
+                                                .sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+                                        })().length === 0 && (
+                                            <tr><td colSpan={6} className="px-6 py-10 text-center text-sm text-muted-foreground">
+                                                {showPastHireBookings ? 'No vehicle hire bookings yet.' : 'No upcoming hire bookings.'}
+                                            </td></tr>
+                                        )}
+                                        {(() => {
+                                            const now = new Date()
+                                            return allBookings
+                                                .filter((b: any) => b.hire_id)
+                                                .filter((b: any) => showPastHireBookings || new Date(b.start_time) >= now)
+                                                .sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+                                        })().map((b: any) => {
+                                            const student = allUsers.find((u: any) => u.id === b.student_id)
+                                            const hire = vehicleHires.find((h: any) => h.id === b.hire_id)
+                                            return (
+                                                <tr key={b.id} className="hover:bg-muted/30 transition-colors">
+                                                    <td className="px-6 py-4">
+                                                        <p className="font-medium text-sm">{student?.full_name || 'Unknown'}</p>
+                                                        <p className="text-xs text-muted-foreground">{student?.email || 'No email'}</p>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm">
+                                                        {hire ? (
+                                                            <span className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-full uppercase tracking-wide ${hire.vehicle_type === 'truck' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                                {hire.vehicle_type === 'truck' ? '🚛' : '🚗'} {hire.title}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-xs text-muted-foreground">Unknown</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <p className="text-sm">{new Date(b.start_time).toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                                        <p className="text-xs text-muted-foreground">{new Date(b.start_time).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })} – {new Date(b.end_time).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })}</p>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        {b.created_at ? (
+                                                            <>
+                                                                <p className="text-sm">{new Date(b.created_at).toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                                                <p className="text-xs text-muted-foreground">{new Date(b.created_at).toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: '2-digit', minute: '2-digit' })}</p>
+                                                            </>
+                                                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                                                    </td>
+                                                    <td className="px-6 py-4 text-sm text-muted-foreground max-w-xs truncate">
+                                                        {b.pickup_address || '—'}
+                                                    </td>
+                                                    <td className="px-6 py-4 space-y-1">
+                                                        <span className={`inline-block px-2 py-1 rounded-full text-[10px] font-bold uppercase ${b.status === 'scheduled' ? 'bg-blue-100 text-blue-700' : b.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                            {b.status}
+                                                        </span>
+                                                        <span className={`inline-block ml-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase ${b.payment_status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                                            {b.payment_status || 'pending'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                                                        <Button variant="ghost" size="sm" className="text-accent" onClick={() => openEditBooking(b)}>Edit</Button>
+                                                        <Button variant="ghost" size="sm" className="text-red-500 hover:bg-red-50" onClick={() => deleteBooking(b.id)}>Delete</Button>
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
 
                     {activeTab === 'payments' && (
                         <>
@@ -1697,13 +2067,34 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                         </form>
                                     </div>
 
+                                    {/* Google Calendar connect */}
+                                    <div className="bg-card border border-border rounded-[2.5rem] p-6 shadow-sm flex items-center justify-between gap-4">
+                                        <div>
+                                            <p className="font-bold text-sm flex items-center gap-2"><Calendar className="w-4 h-4 text-accent" /> Google Calendar</p>
+                                            <p className="text-xs text-muted-foreground mt-0.5">
+                                                {selectedInstructor?.google_calendar_refresh_token
+                                                    ? "Calendar connected — bookings sync automatically to this instructor's Google Calendar."
+                                                    : "Connect this instructor's Google account so their bookings appear in their own calendar."}
+                                            </p>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant={selectedInstructor?.google_calendar_refresh_token ? 'outline' : 'primary'}
+                                            className="shrink-0 gap-2 rounded-xl"
+                                            onClick={() => window.location.href = `/api/calendar/auth?instructorId=${selectedInstructor?.id}`}
+                                        >
+                                            <Calendar className="w-4 h-4" />
+                                            {selectedInstructor?.google_calendar_refresh_token ? 'Reconnect' : 'Connect Calendar'}
+                                        </Button>
+                                    </div>
+
                                     {/* Availability Calendar */}
                                     <div className="bg-card border border-border rounded-[2.5rem] p-8 shadow-sm space-y-5">
                                         {/* Bulk availability setter */}
                                         <form onSubmit={handleBulkAvailability} className="bg-muted/50 border border-border rounded-2xl p-5 space-y-4">
                                             <div>
                                                 <h4 className="font-bold text-sm flex items-center gap-2"><Calendar className="w-4 h-4 text-accent" /> Set Availability for Date Range</h4>
-                                                <p className="text-xs text-muted-foreground mt-0.5">Replaces all current slots with a daily recurring window for every day of the week.</p>
+                                                <p className="text-xs text-muted-foreground mt-0.5">Sets availability for every day in the selected month range. Existing slots in that range are replaced.</p>
                                             </div>
                                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                                 <div className="space-y-1">
@@ -1736,22 +2127,60 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                             </Button>
                                         </form>
 
-                                        <div className="flex items-start justify-between gap-4">
+                                        <div className="flex items-start justify-between gap-4 flex-wrap">
                                             <div>
                                                 <h3 className="text-lg font-bold font-outfit flex items-center gap-2">
                                                     <Clock className="w-5 h-5 text-accent" /> Availability Schedule
                                                 </h3>
                                                 <p className="text-xs text-muted-foreground mt-1">
-                                                    Drag to add a slot · Click a slot to remove it · Recurring weekly
+                                                    Drag to add a slot · Click a slot to remove it · Date-specific
                                                 </p>
                                             </div>
                                             <div className="flex flex-wrap items-center gap-3 text-xs shrink-0">
                                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-green-400 inline-block" /> Available</span>
-                                                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300 inline-block" /> Disabled</span>
+                                                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-400 inline-block" /> Not Available</span>
                                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" /> Paid booking</span>
                                                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-violet-500 inline-block" /> Pending</span>
                                             </div>
                                         </div>
+
+                                        {/* Not-Available block form */}
+                                        <form onSubmit={handleAddBlockedSlot} className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3">
+                                            <p className="text-sm font-bold text-red-700 flex items-center gap-2">🚫 Add Not-Available Block</p>
+                                            <div className="flex flex-wrap gap-3 items-end">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-red-600">Date</label>
+                                                    <input
+                                                        type="date"
+                                                        required
+                                                        value={blockedSlotForm.date}
+                                                        onChange={e => setBlockedSlotForm(f => ({ ...f, date: e.target.value }))}
+                                                        className="bg-white border border-red-200 p-2 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-300"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-red-600">From</label>
+                                                    <input
+                                                        type="time"
+                                                        required
+                                                        value={blockedSlotForm.start_time}
+                                                        onChange={e => setBlockedSlotForm(f => ({ ...f, start_time: e.target.value }))}
+                                                        className="bg-white border border-red-200 p-2 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-300"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold uppercase tracking-wider text-red-600">To</label>
+                                                    <input
+                                                        type="time"
+                                                        required
+                                                        value={blockedSlotForm.end_time}
+                                                        onChange={e => setBlockedSlotForm(f => ({ ...f, end_time: e.target.value }))}
+                                                        className="bg-white border border-red-200 p-2 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-300"
+                                                    />
+                                                </div>
+                                                <Button type="submit" size="sm" className="bg-red-500 hover:bg-red-600 text-white rounded-xl">Add Block</Button>
+                                            </div>
+                                        </form>
 
                                         {availabilityLoading ? (
                                             <div className="flex items-center justify-center py-16 gap-3 text-muted-foreground">
@@ -1759,50 +2188,72 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                 <span className="text-sm">Loading schedule...</span>
                                             </div>
                                         ) : (
-                                            <div className="rounded-2xl overflow-hidden border border-border">
+                                            <div className="rounded-2xl overflow-hidden border border-border avail-cal">
+                                                <style>{`.avail-cal .fc-timegrid-event-harness { inset-inline: 0 !important; }`}</style>
                                                 <FullCalendar
                                                     plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
                                                     initialView="timeGridWeek"
                                                     headerToolbar={{
                                                         left: 'prev,next today',
                                                         center: 'title',
-                                                        right: 'timeGridWeek,dayGridMonth',
+                                                        right: 'timeGridDay,timeGridWeek,dayGridMonth',
                                                     }}
                                                     locale="en-AU"
                                                     dayHeaderFormat={{ day: '2-digit', month: '2-digit', omitCommas: true }}
                                                     titleFormat={{ day: '2-digit', month: '2-digit', year: 'numeric' }}
                                                     allDaySlot={false}
-                                                    slotMinTime="00:00:00"
-                                                    slotMaxTime="24:00:00"
+                                                    slotMinTime="06:00:00"
+                                                    slotMaxTime="21:00:00"
+                                                    slotDuration="00:30:00"
+                                                    slotLabelInterval="01:00"
                                                     height="auto"
+                                                    expandRows={true}
                                                     selectable={true}
                                                     selectMirror={true}
                                                     select={handleCalendarSelect}
                                                     eventClick={(info) => {
                                                         if (info.event.extendedProps.type === 'booking') return
-                                                        if (confirm(`Remove this slot (${info.event.title})?`)) {
+                                                        const label = info.event.extendedProps.slotType === 'blocked' ? 'not-available block' : 'availability slot'
+                                                        if (confirm(`Remove this ${label} (${info.event.title})?`)) {
                                                             handleDeleteSlot(info.event.id)
                                                         }
                                                     }}
                                                     events={[
-                                                        // Recurring availability slots
-                                                        ...instructorAvailability.map(slot => ({
-                                                            id: slot.id,
-                                                            title: `${slot.start_time.slice(0, 5)} – ${slot.end_time.slice(0, 5)}`,
-                                                            daysOfWeek: [slot.day_of_week],
-                                                            startTime: slot.start_time.slice(0, 5),
-                                                            endTime: slot.end_time.slice(0, 5),
-                                                            backgroundColor: slot.is_active ? '#22c55e' : '#d1d5db',
-                                                            borderColor: slot.is_active ? '#16a34a' : '#9ca3af',
-                                                            textColor: slot.is_active ? '#fff' : '#6b7280',
-                                                            extendedProps: { type: 'availability', is_active: slot.is_active },
-                                                        })),
+                                                        // Availability slots — green=available, red=blocked
+                                                        ...instructorAvailability.map(slot => {
+                                                            const isBlocked = slot.type === 'blocked'
+                                                            const bg = isBlocked ? '#ef4444' : (slot.is_active ? '#22c55e' : '#d1d5db')
+                                                            const border = isBlocked ? '#dc2626' : (slot.is_active ? '#16a34a' : '#9ca3af')
+                                                            const label = `${isBlocked ? '🚫 ' : ''}${slot.start_time.slice(0, 5)} – ${slot.end_time.slice(0, 5)}`
+                                                            return slot.specific_date ? ({
+                                                                id: slot.id,
+                                                                title: label,
+                                                                start: `${slot.specific_date}T${slot.start_time.slice(0, 5)}`,
+                                                                end: `${slot.specific_date}T${slot.end_time.slice(0, 5)}`,
+                                                                backgroundColor: bg,
+                                                                borderColor: border,
+                                                                textColor: '#fff',
+                                                                extendedProps: { type: 'availability', slotType: slot.type, is_active: slot.is_active },
+                                                            }) : ({
+                                                                id: slot.id,
+                                                                title: label,
+                                                                daysOfWeek: [slot.day_of_week],
+                                                                startTime: slot.start_time.slice(0, 5),
+                                                                endTime: slot.end_time.slice(0, 5),
+                                                                backgroundColor: bg,
+                                                                borderColor: border,
+                                                                textColor: '#fff',
+                                                                extendedProps: { type: 'availability', slotType: slot.type, is_active: slot.is_active },
+                                                            })
+                                                        }),
                                                         // Actual bookings for this instructor
                                                         ...allBookings
                                                             .filter(b => b.instructor_id === selectedInstructor?.id && b.status !== 'cancelled')
                                                             .map(b => {
                                                                 const student = allUsers.find((u: any) => u.id === b.student_id)
                                                                 const lesson = lessons.find((l: any) => l.id === b.lesson_id)
+                                                                const startLocal = new Date(b.start_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })
+                                                                const endLocal = new Date(b.end_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })
                                                                 return {
                                                                     id: `booking-${b.id}`,
                                                                     title: student?.full_name || 'Booked',
@@ -1811,24 +2262,54 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                                                                     backgroundColor: b.payment_status === 'paid' ? '#3b82f6' : '#8b5cf6',
                                                                     borderColor: b.payment_status === 'paid' ? '#2563eb' : '#7c3aed',
                                                                     textColor: '#fff',
-                                                                    extendedProps: { type: 'booking', student: student?.full_name, lesson: lesson?.title, status: b.status, payment: b.payment_status },
+                                                                    extendedProps: {
+                                                                        type: 'booking',
+                                                                        student: student?.full_name,
+                                                                        studentPhone: student?.phone,
+                                                                        lesson: lesson?.title,
+                                                                        status: b.status,
+                                                                        payment: b.payment_status,
+                                                                        pickupAddress: b.pickup_address,
+                                                                        vehicleType: b.vehicle_type,
+                                                                        transmissionType: b.transmission_type,
+                                                                        timeRange: `${startLocal} – ${endLocal}`,
+                                                                    },
                                                                 }
                                                             }),
                                                     ]}
                                                     eventContent={(arg) => {
                                                         if (arg.event.extendedProps.type === 'booking') {
+                                                            const p = arg.event.extendedProps
                                                             return (
-                                                                <div className="px-1.5 py-1 h-full overflow-hidden">
-                                                                    <div className="text-[11px] font-bold leading-tight truncate">📚 {arg.event.extendedProps.student}</div>
-                                                                    <div className="text-[10px] opacity-90 truncate">{arg.event.extendedProps.lesson}</div>
-                                                                    <div className="text-[10px] opacity-80 capitalize">{arg.event.extendedProps.payment}</div>
+                                                                <div
+                                                                    className="px-2 py-1.5 h-full overflow-hidden flex flex-col gap-0.5 cursor-pointer"
+                                                                    onMouseEnter={(e) => {
+                                                                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                                                                        // Position tooltip to the right of the event; fall back to left if near right edge
+                                                                        const tooltipWidth = 240
+                                                                        const spaceRight = window.innerWidth - rect.right
+                                                                        const x = spaceRight >= tooltipWidth + 12
+                                                                            ? rect.right + 8
+                                                                            : rect.left - tooltipWidth - 8
+                                                                        setCalendarTooltip({ props: p, x, y: rect.top })
+                                                                    }}
+                                                                    onMouseLeave={() => setCalendarTooltip(null)}
+                                                                >
+                                                                    <div className="text-xs font-bold leading-tight truncate">👤 {p.student}</div>
+                                                                    <div className="text-[11px] font-medium opacity-95 truncate">{p.lesson}</div>
+                                                                    <div className="text-[11px] font-semibold capitalize px-1.5 py-0.5 rounded-full bg-white/20 w-fit">
+                                                                        {p.payment === 'paid' ? '✓ Paid' : '⏳ Pending'}
+                                                                    </div>
                                                                 </div>
                                                             )
                                                         }
+                                                        const isBlocked = arg.event.extendedProps.slotType === 'blocked'
                                                         return (
-                                                            <div className="px-1.5 py-1 h-full overflow-hidden">
-                                                                <div className="text-[11px] font-bold leading-tight">{arg.event.title}</div>
-                                                                <div className="text-[10px] opacity-80">{arg.event.extendedProps.is_active ? 'Available' : 'Disabled'}</div>
+                                                            <div className="px-2 py-1.5 h-full overflow-hidden flex flex-col gap-0.5">
+                                                                <div className="text-xs font-bold leading-tight text-white">{arg.event.title}</div>
+                                                                <div className="text-[11px] font-semibold text-white/90">
+                                                                    {isBlocked ? '🚫 Not Available' : (arg.event.extendedProps.is_active ? '✓ Available' : '— Disabled')}
+                                                                </div>
                                                             </div>
                                                         )
                                                     }}
@@ -2107,90 +2588,153 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
 
                         <form onSubmit={handleSaveBookingEdit} className="space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Instructor */}
-                                <div className="space-y-1">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Instructor</label>
-                                    <select
-                                        value={bookingEditForm.instructorId}
-                                        onChange={e => setBookingEditForm(f => ({ ...f, instructorId: e.target.value, time: '' }))}
-                                        required
-                                        className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
-                                    >
-                                        <option value="">Select instructor</option>
-                                        {instructors.map((inst: any) => (
-                                            <option key={inst.id} value={inst.id}>{inst.full_name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                {/* Lesson */}
-                                <div className="space-y-1">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Lesson</label>
-                                    <select
-                                        value={bookingEditForm.lessonId}
-                                        onChange={e => setBookingEditForm(f => ({ ...f, lessonId: e.target.value, time: '' }))}
-                                        required
-                                        className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
-                                    >
-                                        <option value="">Select lesson</option>
-                                        {lessons.map((l: any) => (
-                                            <option key={l.id} value={l.id}>{l.title} — ${l.price}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                {/* Date */}
-                                <div className="space-y-1">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Date</label>
-                                    <input
-                                        type="date"
-                                        required
-                                        value={bookingEditForm.date}
-                                        onChange={e => setBookingEditForm(f => ({ ...f, date: e.target.value, time: '' }))}
-                                        className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
-                                    />
-                                </div>
-
-                                {/* Time — slot picker */}
-                                <div className="space-y-2 md:col-span-2">
-                                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                                        Available Times
-                                        {bookingEditForm.date && bookingEditForm.instructorId && (
-                                            <span className="ml-2 normal-case font-normal text-muted-foreground/70">
-                                                — {new Date(bookingEditForm.date + 'T00:00:00').toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}
-                                            </span>
-                                        )}
-                                    </label>
-                                    {!bookingEditForm.instructorId || !bookingEditForm.date ? (
-                                        <p className="text-xs text-muted-foreground italic">Select an instructor and date to see available times.</p>
-                                    ) : slotsLoading ? (
-                                        <div className="flex items-center gap-2 py-2">
-                                            <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-                                            <span className="text-xs text-muted-foreground">Loading available times…</span>
+                                {editingBooking.hire_id ? (
+                                    /* ── Hire booking — read-only hire label, direct time input ── */
+                                    <>
+                                        <div className="space-y-1 md:col-span-2">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Vehicle Hire</label>
+                                            <p className="px-3 py-2.5 bg-muted border border-border rounded-xl text-sm">
+                                                {vehicleHires.find((h: any) => h.id === editingBooking.hire_id)?.title || 'Vehicle Hire'}
+                                            </p>
                                         </div>
-                                    ) : slotsMessage ? (
-                                        <p className="text-xs text-amber-600 font-medium">{slotsMessage}</p>
-                                    ) : (
-                                        <div className="flex flex-wrap gap-2">
-                                            {availableSlots.map(slot => (
-                                                <button
-                                                    key={slot.value}
-                                                    type="button"
-                                                    onClick={() => setBookingEditForm(f => ({ ...f, time: slot.value }))}
-                                                    className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-all ${
-                                                        bookingEditForm.time === slot.value
-                                                            ? 'bg-accent text-white border-accent shadow-sm'
-                                                            : 'bg-muted border-border hover:border-accent/50 text-foreground'
-                                                    }`}
-                                                >
-                                                    {slot.label}
-                                                </button>
-                                            ))}
+
+                                        {/* Date */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Date</label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={bookingEditForm.date}
+                                                onChange={e => setBookingEditForm(f => ({ ...f, date: e.target.value }))}
+                                                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
+                                            />
                                         </div>
-                                    )}
-                                    {/* Keep a hidden required input so form validation still works */}
-                                    <input type="hidden" name="time" value={bookingEditForm.time} required />
-                                </div>
+
+                                        {/* Time — direct input, no slot picker needed for hire */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Time</label>
+                                            <input
+                                                type="time"
+                                                required
+                                                value={bookingEditForm.time}
+                                                onChange={e => setBookingEditForm(f => ({ ...f, time: e.target.value }))}
+                                                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
+                                            />
+                                        </div>
+
+                                        {/* Existing bookings for this vehicle on selected date */}
+                                        {bookingEditForm.date && (() => {
+                                            const dayBookings = allBookings.filter((b: any) =>
+                                                b.hire_id === editingBooking.hire_id &&
+                                                b.id !== editingBooking.id &&
+                                                b.status === 'scheduled' &&
+                                                new Date(b.start_time).toLocaleDateString('en-CA', { timeZone: 'Australia/Brisbane' }) === bookingEditForm.date
+                                            )
+                                            if (!dayBookings.length) return null
+                                            return (
+                                                <div className="md:col-span-2 bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1">
+                                                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Already booked on this date</p>
+                                                    {dayBookings.map((b: any) => (
+                                                        <p key={b.id} className="text-xs text-amber-800">
+                                                            {new Date(b.start_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })}
+                                                            {' – '}
+                                                            {new Date(b.end_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Brisbane' })}
+                                                            {' · '}
+                                                            {allUsers.find((u: any) => u.id === b.student_id)?.full_name || 'Unknown student'}
+                                                        </p>
+                                                    ))}
+                                                </div>
+                                            )
+                                        })()}
+                                    </>
+                                ) : (
+                                    /* ── Lesson booking — instructor + lesson selects + slot picker ── */
+                                    <>
+                                        {/* Instructor */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Instructor</label>
+                                            <select
+                                                value={bookingEditForm.instructorId}
+                                                onChange={e => setBookingEditForm(f => ({ ...f, instructorId: e.target.value, time: '' }))}
+                                                required
+                                                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
+                                            >
+                                                <option value="">Select instructor</option>
+                                                {instructors.map((inst: any) => (
+                                                    <option key={inst.id} value={inst.id}>{inst.full_name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Lesson */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Lesson</label>
+                                            <select
+                                                value={bookingEditForm.lessonId}
+                                                onChange={e => setBookingEditForm(f => ({ ...f, lessonId: e.target.value, time: '' }))}
+                                                required
+                                                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
+                                            >
+                                                <option value="">Select lesson</option>
+                                                {lessons.map((l: any) => (
+                                                    <option key={l.id} value={l.id}>{l.title} — ${l.price}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Date */}
+                                        <div className="space-y-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Date</label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={bookingEditForm.date}
+                                                onChange={e => setBookingEditForm(f => ({ ...f, date: e.target.value, time: '' }))}
+                                                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-accent/20"
+                                            />
+                                        </div>
+
+                                        {/* Time — slot picker */}
+                                        <div className="space-y-2 md:col-span-2">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                                                Available Times
+                                                {bookingEditForm.date && bookingEditForm.instructorId && (
+                                                    <span className="ml-2 normal-case font-normal text-muted-foreground/70">
+                                                        — {new Date(bookingEditForm.date + 'T00:00:00').toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                    </span>
+                                                )}
+                                            </label>
+                                            {!bookingEditForm.instructorId || !bookingEditForm.date ? (
+                                                <p className="text-xs text-muted-foreground italic">Select an instructor and date to see available times.</p>
+                                            ) : slotsLoading ? (
+                                                <div className="flex items-center gap-2 py-2">
+                                                    <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                                                    <span className="text-xs text-muted-foreground">Loading available times…</span>
+                                                </div>
+                                            ) : slotsMessage ? (
+                                                <p className="text-xs text-amber-600 font-medium">{slotsMessage}</p>
+                                            ) : (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {availableSlots.map(slot => (
+                                                        <button
+                                                            key={slot.value}
+                                                            type="button"
+                                                            onClick={() => setBookingEditForm(f => ({ ...f, time: slot.value }))}
+                                                            className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-all ${
+                                                                bookingEditForm.time === slot.value
+                                                                    ? 'bg-accent text-white border-accent shadow-sm'
+                                                                    : 'bg-muted border-border hover:border-accent/50 text-foreground'
+                                                            }`}
+                                                        >
+                                                            {slot.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <input type="hidden" name="time" value={bookingEditForm.time} required />
+                                        </div>
+                                    </>
+                                )}
 
                                 {/* Status */}
                                 <div className="space-y-1">
@@ -2586,6 +3130,7 @@ const handleAddLesson = async (e: React.FormEvent<HTMLFormElement>) => {
                     </motion.div>
                 </div>
             )}
+            </main>
         </div>
     )
 }

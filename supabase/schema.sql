@@ -439,3 +439,11 @@ alter table public.bookings add column if not exists hire_id uuid references pub
 alter table public.bookings add column if not exists needs_instructor boolean default false;
 alter table public.bookings alter column lesson_id drop not null;
 alter table public.bookings alter column instructor_id drop not null;
+
+-- [2026-04-13] Date-specific availability (replaces recurring day_of_week for new entries)
+-- specific_date stores the exact calendar date; day_of_week kept for backward-compat with old rows.
+alter table public.availability add column if not exists specific_date date;
+alter table public.availability alter column day_of_week drop not null;
+
+-- [2026-04-13] Availability type: 'available' (default) or 'blocked' (not-available override)
+alter table public.availability add column if not exists type text default 'available' check (type in ('available', 'blocked'));

@@ -41,8 +41,8 @@ export default function ContactPage() {
                         {
                             icon: <Mail className="w-6 h-6" />,
                             title: "Email",
-                            detail: "info@brisbanebaysidedrivingschool.com.au",
-                            href: "mailto:info@brisbanebaysidedrivingschool.com.au"
+                            detail: "brisbanebaysidedrivingschool@gmail.com",
+                            href: "mailto:brisbanebaysidedrivingschool@gmail.com"
                         },
                         {
                             icon: <MapPin className="w-6 h-6" />,

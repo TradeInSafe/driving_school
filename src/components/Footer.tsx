@@ -81,15 +81,15 @@ export const Footer = () => {
                         <ul className="space-y-4">
                             <li className="flex gap-3 text-primary-foreground/70">
                                 <MapPin className="w-5 h-5 text-secondary shrink-0" />
-                                <span>123 Driver Lane, Brisbane, QLD 4000</span>
+                                <a href="https://maps.app.goo.gl/P4cuRBgEKfDTH1i26" target="_blank" rel="noopener noreferrer" className="hover:text-secondary transition-colors">13 Lawson St, Capalaba QLD 4157</a>
                             </li>
                             <li className="flex gap-3 text-primary-foreground/70">
                                 <Phone className="w-5 h-5 text-secondary shrink-0" />
-                                <span>+61 400 000 000</span>
+                                <a href="tel:0470252770" className="hover:text-secondary transition-colors">0470 252 770</a>
                             </li>
                             <li className="flex gap-3 text-primary-foreground/70">
                                 <Mail className="w-5 h-5 text-secondary shrink-0" />
-                                <span>info@brisbanebaysidedrivingschool.com</span>
+                                <a href="mailto:brisbanebaysidedrivingschool@gmail.com" className="hover:text-secondary transition-colors">brisbanebaysidedrivingschool@gmail.com</a>
                             </li>
                         </ul>
                     </div>

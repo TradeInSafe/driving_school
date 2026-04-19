@@ -45,7 +45,7 @@ export default function AboutPage() {
                         transition={{ delay: 0.1 }}
                         className="text-primary-foreground/80 max-w-3xl mx-auto text-xl leading-relaxed mt-4"
                     >
-                        Great Heavy Driving School delivers a comprehensive range of standard Car (C Class) and Heavy Vehicle Driving Courses, including One-Day and Package Training for HR and MR vehicles.
+                        Brisbane Bayside Driving School delivers a comprehensive range of standard Car (C Class) and Heavy Vehicle Driving Courses, including One-Day and Package Training for HR and MR vehicles.
                     </motion.p>
                 </div>
             </section>
@@ -65,7 +65,7 @@ export default function AboutPage() {
                         <h2 className="text-accent font-bold tracking-widest uppercase text-sm">Our Story</h2>
                         <h3 className="text-4xl font-bold font-outfit">Empowering Drivers for Every Vehicle Class</h3>
                         <p className="text-muted-foreground leading-relaxed text-lg pt-4">
-                            At <span className="font-bold text-primary">Great Heavy Driving School</span>, we provide an all-inclusive training experience. Whether you're a beginner wanting to earn your P-plates in a standard car, or a professional seeking an HR (Heavy Rigid) or MR (Medium Rigid) commercial license, we have a tailored course designed precisely for you.
+                            At <span className="font-bold text-primary">Brisbane Bayside Driving School</span>, we provide an all-inclusive training experience. Whether you're a beginner wanting to earn your P-plates in a standard car, or a professional seeking an HR (Heavy Rigid) or MR (Medium Rigid) commercial license, we have a tailored course designed precisely for you.
                         </p>
                         <p className="text-muted-foreground leading-relaxed text-lg">
                             We don't just teach you to pass your test—we equip you with the practical skills, road awareness, and confidence needed to safely operate anything from a small car to a massive commercial truck on Australia's most demanding road networks.
