@@ -69,7 +69,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }
     }
 
-    // Double-booking check for lesson bookings with an instructor
+    // Double-booking check for lesson bookings with an instructor (including 30-min travel buffer)
     if (!isHire && status === 'scheduled' && instructorId) {
         const { data: conflicts } = await db
             .from('bookings')
@@ -77,13 +77,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             .eq('instructor_id', instructorId)
             .neq('id', id)
             .in('status', ['scheduled'])
-            .lt('start_time', endTime.toISOString())
-            .gt('end_time', startTime.toISOString())
+            .lt('start_time', new Date(endTime.getTime() + BUFFER_MS).toISOString())
+            .gt('end_time', new Date(startTime.getTime() - BUFFER_MS).toISOString())
 
         if (conflicts && conflicts.length > 0) {
             const clash = new Date(conflicts[0].start_time)
             return NextResponse.json({
-                error: `Instructor already has a booking on ${clash.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })} at ${clash.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}.`
+                error: `Instructor already has a booking on ${clash.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })} at ${clash.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })} (including 30-min travel buffer).`
             }, { status: 409 })
         }
     }

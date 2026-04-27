@@ -30,16 +30,19 @@ export async function POST(req: Request) {
             price = lesson.price
         }
 
-        // Double-booking check when instructor is assigned
+        // Double-booking check when instructor is assigned (including 30-min travel buffer)
+        const BUFFER_MS = 30 * 60_000
         if (instructorId) {
             for (const slot of slots as { start_time: string; end_time: string }[]) {
+                const slotEnd = new Date(slot.end_time).getTime()
+                const slotStart = new Date(slot.start_time).getTime()
                 const { data: conflicts } = await db
                     .from('bookings')
                     .select('id, start_time, end_time')
                     .eq('instructor_id', instructorId)
                     .in('status', ['scheduled'])
-                    .lt('start_time', slot.end_time)
-                    .gt('end_time', slot.start_time)
+                    .lt('start_time', new Date(slotEnd + BUFFER_MS).toISOString())
+                    .gt('end_time', new Date(slotStart - BUFFER_MS).toISOString())
 
                 if (conflicts && conflicts.length > 0) {
                     const clash = conflicts[0]

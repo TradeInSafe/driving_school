@@ -36,14 +36,17 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Your lesson package has expired.' }, { status: 403 })
         }
 
-        // 2. Conflict check for every slot
+        // 2. Conflict check for every slot (including 30-min travel buffer)
+        const BUFFER_MS = 30 * 60_000
         for (const slot of slots as { start_time: string; end_time: string }[]) {
+            const slotEnd = new Date(slot.end_time).getTime()
+            const slotStart = new Date(slot.start_time).getTime()
             const { data: existingBooking } = await adminClient
                 .from('bookings')
                 .select('id')
                 .eq('instructor_id', instructorId)
-                .lt('start_time', slot.end_time)
-                .gt('end_time', slot.start_time)
+                .lt('start_time', new Date(slotEnd + BUFFER_MS).toISOString())
+                .gt('end_time', new Date(slotStart - BUFFER_MS).toISOString())
                 .in('status', ['scheduled', 'completed'])
                 .single()
 
