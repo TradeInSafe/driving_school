@@ -100,23 +100,26 @@ export async function POST(request: NextRequest) {
     const startTime = new Date(`${date}T${time}:00+10:00`)
     const endTime = new Date(startTime.getTime() + lesson.duration_minutes * 60000)
 
-    // Double-booking check
-    const { data: conflicts } = await db
-        .from('bookings')
-        .select('id, start_time, end_time')
-        .eq('instructor_id', instructorId)
-        .in('status', ['scheduled'])
-        .lt('start_time', endTime.toISOString())
-        .gt('end_time', startTime.toISOString())
+    // Double-booking check (including 30-min travel buffer)
+    if (instructorId) {
+        const LESSON_BUFFER_MS = 30 * 60_000
+        const { data: conflicts } = await db
+            .from('bookings')
+            .select('id, start_time, end_time')
+            .eq('instructor_id', instructorId)
+            .in('status', ['scheduled'])
+            .lt('start_time', new Date(endTime.getTime() + LESSON_BUFFER_MS).toISOString())
+            .gt('end_time', new Date(startTime.getTime() - LESSON_BUFFER_MS).toISOString())
 
-    if (conflicts && conflicts.length > 0) {
-        const clash = conflicts[0]
-        const clashTime = new Date(clash.start_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
-        const clashDate = new Date(clash.start_time).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })
-        return NextResponse.json(
-            { error: `Instructor already has a booking on ${clashDate} at ${clashTime}. Please choose a different time.` },
-            { status: 409 }
-        )
+        if (conflicts && conflicts.length > 0) {
+            const clash = conflicts[0]
+            const clashTime = new Date(clash.start_time).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
+            const clashDate = new Date(clash.start_time).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })
+            return NextResponse.json(
+                { error: `Instructor already has a booking on ${clashDate} at ${clashTime} (including 30-min travel buffer). Please choose a different time.` },
+                { status: 409 }
+            )
+        }
     }
 
     const { data: newBooking, error: bookingError } = await db.from('bookings').insert({
